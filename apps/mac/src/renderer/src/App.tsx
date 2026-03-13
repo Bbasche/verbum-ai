@@ -14,6 +14,7 @@ import verbumMacIcon from "./assets/verbum-mac-icon-1024.png";
 
 type SearchCitation = (typeof searchDocuments)[number];
 type DetailTab = "inspector" | "search";
+type GraphFocus = "all" | "selected" | "live";
 
 function scoreDocument(query: string, document: SearchCitation): number {
   const terms = query.toLowerCase().split(/\W+/).filter(Boolean);
@@ -60,6 +61,8 @@ export function App() {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [routeTo, setRouteTo] = useState("claude-code");
   const [detailTab, setDetailTab] = useState<DetailTab>("inspector");
+  const [graphFocus, setGraphFocus] = useState<GraphFocus>("selected");
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
   );
@@ -82,6 +85,7 @@ export function App() {
     conversations.find((conversation) => conversation.id === selectedConversationId) ?? conversations[0];
   const feed = allMessages.filter((message) => message.conversationId === selectedConversationId);
   const activeEdge = graphEdges[pulseIndex] ?? graphEdges[0];
+  const focusedNodeId = hoveredNodeId ?? selectedId;
   const sourceById = new Map(sources.map((source) => [source.id, source]));
   const terminalById = new Map(terminals.map((terminal) => [terminal.id, terminal]));
   const messageCountBySource = new Map<string, number>();
@@ -119,6 +123,8 @@ export function App() {
 
   const selectedDescriptor =
     graphDescriptors.find((descriptor) => descriptor.id === selectedId) ?? graphDescriptors[0];
+  const focusedDescriptor =
+    graphDescriptors.find((descriptor) => descriptor.id === focusedNodeId) ?? selectedDescriptor;
   const selectedSource =
     selectedDescriptor?.source ??
     sources[0] ?? {
@@ -146,6 +152,24 @@ export function App() {
       related: edge.from === selectedId || edge.to === selectedId
     };
   });
+  const visibleFlows = relatedFlows.filter((flow) => {
+    if (graphFocus === "all") {
+      return true;
+    }
+
+    if (graphFocus === "live") {
+      return flow.active || flow.related;
+    }
+
+    return flow.related;
+  });
+  const visibleNodeIds = new Set<string>(["verbum-app", selectedId, focusedNodeId]);
+
+  for (const flow of visibleFlows) {
+    visibleNodeIds.add(flow.from);
+    visibleNodeIds.add(flow.to);
+  }
+
   const selectedNodeMessages = allMessages
     .filter((message) => message.sourceId === selectedId)
     .slice(-3)
@@ -361,6 +385,13 @@ export function App() {
               <div className="graph-grid" aria-hidden></div>
               <div className="graph-orbit graph-orbit-a" aria-hidden></div>
               <div className="graph-orbit graph-orbit-b" aria-hidden></div>
+              <div
+                className="graph-spotlight"
+                style={{
+                  left: `${focusedDescriptor.x}%`,
+                  top: `${focusedDescriptor.y}%`
+                }}
+              ></div>
 
               <div className="graph-hud">
                 <span className="eyebrow">Selected Node</span>
@@ -384,42 +415,81 @@ export function App() {
                 </div>
               </div>
 
+              <div className="graph-toolbar">
+                {([
+                  ["selected", "Selected"],
+                  ["live", "Live"],
+                  ["all", "All"]
+                ] as const).map(([value, label]) => (
+                  <button
+                    className={graphFocus === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
+                    key={value}
+                    onClick={() => setGraphFocus(value)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="graph-flow-rail">
                 <span className="eyebrow">Live Flows</span>
                 <div className="graph-flow-list">
-                  {relatedFlows.map((flow) => (
-                    <article
+                  {visibleFlows.map((flow) => (
+                    <button
                       className={`graph-flow-item ${
                         flow.active ? "graph-flow-item-active" : ""
                       } ${flow.related ? "graph-flow-item-related" : ""}`}
                       key={`${flow.from}-${flow.to}`}
+                      onClick={() => {
+                        const nextNodeId = flow.from === selectedId ? flow.to : flow.from;
+                        setSelectedId(nextNodeId);
+                        setDetailTab("inspector");
+                      }}
+                      type="button"
                     >
                       <strong>{flow.label}</strong>
                       <span>
                         {flow.fromLabel} to {flow.toLabel}
                       </span>
                       <b>{flow.traffic} touches</b>
-                    </article>
+                    </button>
                   ))}
                 </div>
               </div>
 
               <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-                {graphEdges.map((edge, index) => {
+                {relatedFlows.map((edge, index) => {
                   const from = graphNodes.find((node) => node.id === edge.from);
                   const to = graphNodes.find((node) => node.id === edge.to);
 
-                  if (!from || !to) {
+                  if (!from || !to || !visibleFlows.some((flow) => flow.from === edge.from && flow.to === edge.to)) {
                     return null;
                   }
 
                   const curve = `M ${from.x} ${from.y} C ${from.x} ${(from.y + to.y) / 2 - 12}, ${to.x} ${(from.y + to.y) / 2 + 12}, ${to.x} ${to.y}`;
                   return (
-                    <path
-                      className={index === pulseIndex ? "graph-path graph-path-active" : "graph-path"}
-                      d={curve}
-                      key={`${edge.from}-${edge.to}`}
-                    />
+                    <g key={`${edge.from}-${edge.to}`}>
+                      <path
+                        className={index === pulseIndex ? "graph-path graph-path-active" : "graph-path"}
+                        d={curve}
+                      />
+                      {index === pulseIndex ? (
+                        <>
+                          <circle className="graph-packet" r="1.1">
+                            <animateMotion dur="2.4s" repeatCount="indefinite" path={curve} />
+                          </circle>
+                          <circle className="graph-packet graph-packet-delayed" r="0.9">
+                            <animateMotion
+                              begin="0.7s"
+                              dur="2.4s"
+                              repeatCount="indefinite"
+                              path={curve}
+                            />
+                          </circle>
+                        </>
+                      ) : null}
+                    </g>
                   );
                 })}
               </svg>
@@ -428,16 +498,20 @@ export function App() {
                 <button
                   className={`graph-node graph-node-${node.type} ${
                     node.id === selectedId ? "graph-node-active" : ""
-                  }`}
+                  } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""}`}
                   key={node.id}
                   onClick={() => {
                     setSelectedId(node.id);
                     setDetailTab("inspector");
                   }}
+                  onMouseEnter={() => setHoveredNodeId(node.id)}
+                  onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
                   style={{
                     left: `${node.x}%`,
                     top: `${node.y}%`,
-                    transform: `translate(-50%, -50%) translateZ(${node.z}px)`
+                    transform: `translate(-50%, -50%) translateZ(${node.z}px) scale(${
+                      node.id === focusedNodeId ? 1.04 : visibleNodeIds.has(node.id) ? 1 : 0.94
+                    })`
                   }}
                   type="button"
                 >
@@ -453,6 +527,7 @@ export function App() {
                       {node.inbound}/{node.outbound} edges
                     </span>
                   </div>
+                  <div className="graph-node-spark"></div>
                 </button>
               ))}
             </div>

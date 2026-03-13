@@ -48,6 +48,7 @@ button {
 .app-shell {
   min-height: 100vh;
   padding: 18px;
+  animation: page-enter 460ms ease;
 }
 
 .topbar {
@@ -229,6 +230,7 @@ button {
   border-radius: 28px;
   padding: 18px;
   backdrop-filter: blur(18px);
+  animation: panel-rise 520ms ease;
 }
 
 .panel-head {
@@ -411,6 +413,16 @@ button {
     linear-gradient(180deg, rgba(8, 16, 26, 0.98), rgba(7, 13, 20, 1));
 }
 
+.graph-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(130deg, transparent 15%, rgba(127, 208, 255, 0.04), transparent 40%);
+  transform: translateX(-45%);
+  animation: graph-sheen 8s linear infinite;
+  pointer-events: none;
+}
+
 .graph-grid,
 .graph-orbit,
 .graph-svg {
@@ -442,6 +454,19 @@ button {
   height: 100%;
 }
 
+.graph-spotlight {
+  position: absolute;
+  z-index: 1;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(127, 208, 255, 0.16), rgba(127, 208, 255, 0.03) 48%, transparent 72%);
+  filter: blur(10px);
+  pointer-events: none;
+  animation: spotlight-breathe 3.4s ease-in-out infinite;
+}
+
 .graph-path {
   fill: none;
   stroke: rgba(127, 208, 255, 0.26);
@@ -453,6 +478,16 @@ button {
   stroke: rgba(255, 179, 107, 0.92);
   stroke-width: 0.56;
   animation: pulse-path 1.4s ease-in-out infinite;
+}
+
+.graph-packet {
+  fill: var(--accent-2);
+  filter: drop-shadow(0 0 8px rgba(255, 179, 107, 0.85));
+}
+
+.graph-packet-delayed {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 10px rgba(127, 208, 255, 0.85));
 }
 
 .graph-hud,
@@ -470,6 +505,35 @@ button {
 .graph-hud {
   top: 16px;
   left: 16px;
+}
+
+.graph-toolbar {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(10, 18, 28, 0.88);
+  backdrop-filter: blur(18px);
+}
+
+.graph-toggle {
+  padding: 9px 13px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.graph-toggle-active {
+  background: rgba(127, 208, 255, 0.14);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(127, 208, 255, 0.18);
 }
 
 .graph-hud h2 {
@@ -513,9 +577,17 @@ button {
 }
 
 .graph-flow-item {
+  width: 100%;
   padding: 12px;
   border-radius: 16px;
   background: rgba(16, 28, 41, 0.94);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.graph-flow-item:hover {
+  transform: translateY(-1px);
 }
 
 .graph-flow-item strong {
@@ -552,7 +624,7 @@ button {
   color: var(--text);
   cursor: pointer;
   backdrop-filter: blur(18px);
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
 }
 
 .graph-node:hover,
@@ -590,6 +662,21 @@ button {
 
 .graph-node-meta {
   margin-top: 12px;
+}
+
+.graph-node-spark {
+  position: absolute;
+  inset: auto 14px 12px auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(127, 208, 255, 0.3), transparent 65%);
+  opacity: 0.6;
+  animation: spark-breathe 2.8s ease-in-out infinite;
+}
+
+.graph-node-muted {
+  opacity: 0.44;
 }
 
 .graph-node-model {
@@ -668,6 +755,7 @@ button {
   max-height: 560px;
   overflow: auto;
   padding-right: 2px;
+  scroll-behavior: smooth;
 }
 
 .message-card {
@@ -830,6 +918,7 @@ button {
 .search-log {
   max-height: 420px;
   overflow: auto;
+  scroll-behavior: smooth;
 }
 
 .search-turn-user {
@@ -852,6 +941,66 @@ button {
 
   to {
     transform: translateX(-50%);
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spotlight-breathe {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0.72;
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes spark-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes graph-sheen {
+  0% {
+    transform: translateX(-45%);
+  }
+
+  100% {
+    transform: translateX(140%);
   }
 }
 
@@ -888,10 +1037,12 @@ button {
   }
 
   .graph-hud,
-  .graph-flow-rail {
+  .graph-flow-rail,
+  .graph-toolbar {
     position: static;
     width: auto;
     margin: 14px;
+    transform: none;
   }
 
   .graph-stage {
