@@ -1,67 +1,81 @@
-import { launchChecklist, quickstartCode } from "../../lib/content";
+import Link from "next/link";
 
 export default function DocsPage() {
   return (
-    <div className="page-stack">
-      <section className="panel intro-panel">
-        <span className="eyebrow">Docs</span>
-        <h1>Ship the local orchestration story first.</h1>
-        <p>
-          Verbum launches as the framework and command center for single-machine orchestration. That is
-          already a huge story: models, terminals, memory, tools, and humans all visible in one graph.
-        </p>
-      </section>
+    <>
+      <header>
+        <div className="hinner">
+          <Link href="/" className="wordmark">
+            Verbum<span className="wdot"></span>
+          </Link>
+          <nav>
+            <Link href="/">Home</Link>
+            <a href="https://github.com/Bbasche/verbum" className="ncta">
+              GitHub →
+            </a>
+          </nav>
+        </div>
+      </header>
 
-      <section className="panel panel-code">
-        <div className="section-heading">
-          <span className="eyebrow">Install</span>
-          <h2>`npm install verbum`</h2>
-          <p>
-            The package exports the Router, built-in actors, message helpers, and a scripted model adapter
-            so you can stand up flows quickly before wiring provider SDKs.
+      <section className="docs-hero">
+        <div className="container">
+          <p className="hlabel">Docs</p>
+          <h1>
+            Build with the framework.
+            <br />
+            Run the Mac app.
+          </h1>
+          <p className="hsub">
+            The website is static. The package and the Mac app do the real work.
           </p>
         </div>
-        <pre>
-          <code>{quickstartCode}</code>
-        </pre>
       </section>
 
-      <section className="panel">
-        <div className="section-heading">
-          <span className="eyebrow">What You Get</span>
-          <h2>Framework, observability, and launch assets.</h2>
-        </div>
-        <ul className="docs-list">
-          <li>Router with recursive dispatch, conversation storage, and graph visualization data.</li>
-          <li>Built-in ToolActor, MemoryActor, HumanActor, ProcessActor, and pluggable ModelActor.</li>
-          <li>Next.js launch site with the product narrative, docs, and a static native-app overview.</li>
-          <li>Release automation, CI, CONTRIBUTING guide, and weekend launch checklist.</li>
-        </ul>
-      </section>
+      <section>
+        <div className="container docs-shell">
+          <article className="doc-block">
+            <div className="slabel">Install</div>
+            <pre className="vcode">{`git clone https://github.com/Bbasche/verbum.git
+cd verbum
+npm install
 
-      <section className="panel">
-        <div className="section-heading">
-          <span className="eyebrow">Roadmap Honesty</span>
-          <h2>P2P stays next.</h2>
-        </div>
-        <p>
-          Collaboration and mesh networking belong in the roadmap, not in the weekend launch copy. The
-          local orchestration thesis is strong enough on its own and will make the future network story
-          easier to believe.
-        </p>
-      </section>
+npm run dev --workspace @verbum/mac`}</pre>
+          </article>
 
-      <section className="panel">
-        <div className="section-heading">
-          <span className="eyebrow">Launch Steps</span>
-          <h2>After cloning the repo.</h2>
+          <article className="doc-block">
+            <div className="slabel">What You Get</div>
+            <ul className="doc-list">
+              <li>The `verbum` TypeScript package with Router and built-in actors.</li>
+              <li>A native Mac app that watches Claude Code, Codex, and local terminal sessions.</li>
+              <li>A master conversation model with optional spawned side conversations.</li>
+              <li>Setup docs, demo docs, CI, and release scaffolding.</li>
+            </ul>
+          </article>
+
+          <article className="doc-block">
+            <div className="slabel">Mac App Setup</div>
+            <pre className="vcode">{`# optional local config
+cp verbum.app.config.example.json verbum.app.config.json
+
+# run the app
+npm run dev --workspace @verbum/mac
+
+# the app can:
+# - watch ~/.claude/tasks
+# - prompt claude
+# - run codex exec --json
+# - run tracked terminal commands`}</pre>
+          </article>
+
+          <article className="doc-block">
+            <div className="slabel">Notes</div>
+            <p className="doc-copy">
+              The site stays static on purpose. The Mac app is the live Verbum client for Claude Code,
+              Codex, terminals, and custom sources.
+            </p>
+          </article>
         </div>
-        <ol className="checklist">
-          {launchChecklist.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ol>
       </section>
-    </div>
+    </>
   );
 }
