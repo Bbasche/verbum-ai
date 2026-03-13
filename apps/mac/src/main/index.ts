@@ -40,10 +40,13 @@ app.whenReady().then(() => {
   bridgeManager.start();
 
   ipcMain.handle("verbum:get-snapshot", () => bridgeManager.getSnapshot());
+  ipcMain.handle("verbum:get-setup-status", () => bridgeManager.getSetupStatus());
   ipcMain.handle("verbum:send-message", (_event, request) => bridgeManager.sendMessage(request));
   ipcMain.handle("verbum:run-terminal", (_event, request) => bridgeManager.runTerminalCommand(request));
   ipcMain.handle("verbum:run-demo", () => bridgeManager.runLaunchDemo());
   ipcMain.handle("verbum:spawn-conversation", (_event, request) => bridgeManager.spawnConversation(request));
+  ipcMain.handle("verbum:install-core-package", () => bridgeManager.installCorePackage());
+  ipcMain.handle("verbum:install-helper-service", () => bridgeManager.installHelperService());
 
   createWindow();
 

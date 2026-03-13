@@ -4,6 +4,7 @@ import type {
   BridgeSnapshot,
   RunTerminalRequest,
   SendMessageRequest,
+  SetupStatus,
   SpawnConversationRequest
 } from "../shared/bridge-types.js";
 
@@ -17,6 +18,9 @@ contextBridge.exposeInMainWorld("verbumApp", {
   runLaunchDemo: () => ipcRenderer.invoke("verbum:run-demo"),
   spawnConversation: (request: SpawnConversationRequest) =>
     ipcRenderer.invoke("verbum:spawn-conversation", request),
+  getSetupStatus: () => ipcRenderer.invoke("verbum:get-setup-status") as Promise<SetupStatus>,
+  installCorePackage: () => ipcRenderer.invoke("verbum:install-core-package") as Promise<string>,
+  installHelperService: () => ipcRenderer.invoke("verbum:install-helper-service") as Promise<string>,
   subscribe: (listener: (snapshot: BridgeSnapshot) => void) => {
     const wrapped = (_event: unknown, snapshot: BridgeSnapshot) => listener(snapshot);
     ipcRenderer.on("verbum:snapshot", wrapped);

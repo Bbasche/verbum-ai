@@ -3,6 +3,7 @@ import type {
   ConversationSummary,
   RunTerminalRequest,
   SendMessageRequest,
+  SetupStatus,
   SpawnConversationRequest
 } from "./message-schema";
 
@@ -16,6 +17,9 @@ declare global {
       runTerminalCommand(request: RunTerminalRequest): Promise<void>;
       runLaunchDemo(): Promise<void>;
       spawnConversation(request: SpawnConversationRequest): Promise<ConversationSummary>;
+      getSetupStatus(): Promise<SetupStatus>;
+      installCorePackage(): Promise<string>;
+      installHelperService(): Promise<string>;
       subscribe(listener: (snapshot: BridgeSnapshot) => void): () => void;
     };
   }

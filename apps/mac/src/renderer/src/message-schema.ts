@@ -5,6 +5,7 @@ export type {
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,
+  SetupStatus,
   SpawnConversationRequest,
   SourceDescriptor,
   SourceKind,

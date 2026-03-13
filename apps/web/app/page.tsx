@@ -22,7 +22,6 @@ export default function HomePage() {
 
       <section className="hero">
         <div className="container">
-          <img alt="Verbum" className="hero-logo" src="/brand/verbum-logo-light.png" />
           <p className="hlabel">Open source · MIT · TypeScript</p>
           <h1>
             Everything is a
@@ -49,7 +48,7 @@ export default function HomePage() {
           <div className="wide">
             <div className="icmd">
               <span className="p">$</span>
-              <span className="c">npm install verbum-ai</span>
+              <span className="c">npm install https://github.com/Bbasche/verbum-ai/releases/latest/download/verbum-ai-0.1.0.tgz</span>
             </div>
             <div className="ibadges">
               <span className="badge g">MIT</span>

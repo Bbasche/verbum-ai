@@ -35,6 +35,6 @@
 ## Launch
 
 - Post the announcement clip on X
-- Immediately reply with the repo link, docs link, and `npm install verbum-ai`
+- Immediately reply with the repo link, docs link, and `npm install https://github.com/Bbasche/verbum-ai/releases/latest/download/verbum-ai-0.1.0.tgz`
 - Submit Show HN with the same clip and a short honest explanation
 - Stay online for the first two hours and answer comments fast

@@ -84,7 +84,7 @@ Visual:
 
 - Zoom out to show the full graph again
 - Leave the message bus and inbox visible
-- End with the repo URL and `npm install verbum-ai`
+- End with the repo URL and `npm install https://github.com/Bbasche/verbum-ai/releases/latest/download/verbum-ai-0.1.0.tgz`
 
 ## Recording notes
 

@@ -6,14 +6,14 @@ import {
   useState
 } from "react";
 
-import { graphEdges, graphNodes, inboxThread, searchDocuments } from "./demo-data";
+import { graphEdges, graphNodes, searchDocuments } from "./demo-data";
 import { MessageRenderer } from "./MessageRenderer";
-import type { BridgeSnapshot, ConversationSummary, SourceDescriptor } from "./message-schema";
+import type { BridgeSnapshot, ConversationSummary, SetupStatus, SourceDescriptor } from "./message-schema";
 import verbumLogoDark from "./assets/verbum-logo-dark.png";
 import verbumMacIcon from "./assets/verbum-mac-icon-1024.png";
 
 type SearchCitation = (typeof searchDocuments)[number];
-type DetailTab = "inspector" | "search";
+type AppTab = "chat" | "feed" | "graph";
 type GraphFocus = "all" | "selected" | "live";
 
 function scoreDocument(query: string, document: SearchCitation): number {
@@ -34,7 +34,7 @@ function answerQuery(query: string): { summary: string; citations: SearchCitatio
   if (citations.length === 0) {
     return {
       summary:
-        "Verbum App keeps the machine readable: master conversation in focus, graph activity above it, and search on demand instead of everywhere at once.",
+        "Verbum keeps the machine legible with a focused thread, a global activity feed, and a graph that explains how work is moving.",
       citations: searchDocuments.slice(0, 2)
     };
   }
@@ -55,18 +55,21 @@ function titleCase(value: string): string {
 }
 
 export function App() {
+  const [activeTab, setActiveTab] = useState<AppTab>("chat");
   const [selectedId, setSelectedId] = useState("verbum-app");
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState("master");
   const [query, setQuery] = useState("How does Verbum orchestrate Claude Code, Codex, and terminals?");
   const [pulseIndex, setPulseIndex] = useState(0);
   const [routeTo, setRouteTo] = useState("claude-code");
-  const [detailTab, setDetailTab] = useState<DetailTab>("inspector");
   const [graphFocus, setGraphFocus] = useState<GraphFocus>("selected");
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
   );
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [setupBusy, setSetupBusy] = useState<"package" | "service" | null>(null);
+  const [setupNotice, setSetupNotice] = useState<string>("");
   const [searchTurns, setSearchTurns] = useState<
     Array<{ role: "assistant" | "user"; content: string; citations?: SearchCitation[] }>
   >(() => {
@@ -81,18 +84,64 @@ export function App() {
   const busEvents = snapshot?.busEvents ?? ["Verbum App is booting..."];
   const terminals = snapshot?.terminals ?? [];
   const demoCommands = snapshot?.demoCommands ?? [];
-  const selectedConversation =
-    conversations.find((conversation) => conversation.id === selectedConversationId) ?? conversations[0];
-  const feed = allMessages.filter((message) => message.conversationId === selectedConversationId);
-  const activeEdge = graphEdges[pulseIndex] ?? graphEdges[0];
-  const focusedNodeId = hoveredNodeId ?? selectedId;
   const sourceById = new Map(sources.map((source) => [source.id, source]));
   const terminalById = new Map(terminals.map((terminal) => [terminal.id, terminal]));
   const messageCountBySource = new Map<string, number>();
+  const conversationRecencyRank = new Map<string, number>();
+  const focusedNodeId = hoveredNodeId ?? selectedId;
+  const needsSetup = !setupStatus?.packageInstalled || !setupStatus?.serviceInstalled || !setupStatus?.serviceRunning;
 
-  for (const message of allMessages) {
+  allMessages.forEach((message, index) => {
     messageCountBySource.set(message.sourceId, (messageCountBySource.get(message.sourceId) ?? 0) + 1);
-  }
+    if (!conversationRecencyRank.has(message.conversationId)) {
+      conversationRecencyRank.set(message.conversationId, index);
+    }
+  });
+
+  const sortConversations = (items: ConversationSummary[]) =>
+    [...items].sort(
+      (left, right) =>
+        (conversationRecencyRank.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (conversationRecencyRank.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    );
+
+  const selectedConversation =
+    conversations.find((conversation) => conversation.id === selectedConversationId) ?? conversations[0];
+  const selectedSource =
+    sources.find((source) => source.id === routeTo) ??
+    sourceById.get(selectedId) ??
+    sources[0] ?? {
+      id: "verbum-app",
+      name: "Verbum App",
+      kind: "custom",
+      subtitle: "Unified desktop control room",
+      mode: "replacement",
+      connected: true,
+      typing: "graph, feed, thread routing",
+      status: "starting"
+    };
+  const threadMessages = allMessages.filter(
+    (message) => message.conversationId === selectedConversationId
+  );
+  const conversationSections = [
+    {
+      key: "master",
+      label: "Master",
+      items: sortConversations(conversations.filter((conversation) => conversation.kind === "master"))
+    },
+    {
+      key: "side",
+      label: "Side Threads",
+      items: sortConversations(conversations.filter((conversation) => conversation.kind === "side"))
+    },
+    {
+      key: "imported",
+      label: "Imported",
+      items: sortConversations(conversations.filter((conversation) => conversation.kind === "imported"))
+    }
+  ].filter((section) => section.items.length > 0);
+  const globalMessages = [...allMessages].reverse();
+  const activeEdge = graphEdges[pulseIndex] ?? graphEdges[0];
 
   const graphDescriptors = graphNodes.map((node) => {
     const source = sourceById.get(node.id);
@@ -100,21 +149,17 @@ export function App() {
     const messageCount = messageCountBySource.get(node.id) ?? 0;
     const inbound = graphEdges.filter((edge) => edge.to === node.id).length;
     const outbound = graphEdges.filter((edge) => edge.from === node.id).length;
-    const connected = source ? source.connected : node.id === "verbum-app" || node.id === "search" || node.id === "inbox";
+    const connected = source
+      ? source.connected
+      : node.id === "verbum-app" || node.id === "search" || node.id === "inbox";
     const status = source?.status ?? (terminal?.lastCommand ? "busy" : connected ? "ready" : "idle");
-    const accent = source?.mode ?? titleCase(node.type);
-    const summary = terminal?.lastCommand
-      ? `Last command: ${terminal.lastCommand}`
-      : source?.subtitle ?? node.detail;
 
     return {
       ...node,
       source,
-      terminal,
       connected,
       status,
-      accent,
-      summary,
+      mode: source?.mode ?? titleCase(node.type),
       messageCount,
       inbound,
       outbound
@@ -125,33 +170,23 @@ export function App() {
     graphDescriptors.find((descriptor) => descriptor.id === selectedId) ?? graphDescriptors[0];
   const focusedDescriptor =
     graphDescriptors.find((descriptor) => descriptor.id === focusedNodeId) ?? selectedDescriptor;
-  const selectedSource =
-    selectedDescriptor?.source ??
-    sources[0] ?? {
-      id: "verbum-app",
-      name: "Verbum App",
-      kind: "custom",
-      subtitle: "Unified desktop control room",
-      mode: "replacement",
-      connected: true,
-      typing: "graph, inbox, search, typed source registry",
-      status: "starting"
-    };
+
   const relatedFlows = graphEdges.map((edge, index) => {
     const traffic =
       (messageCountBySource.get(edge.from) ?? 0) + (messageCountBySource.get(edge.to) ?? 0);
-    const from = graphNodes.find((node) => node.id === edge.from)?.label ?? edge.from;
-    const to = graphNodes.find((node) => node.id === edge.to)?.label ?? edge.to;
+    const fromLabel = graphNodes.find((node) => node.id === edge.from)?.label ?? edge.from;
+    const toLabel = graphNodes.find((node) => node.id === edge.to)?.label ?? edge.to;
 
     return {
       ...edge,
-      fromLabel: from,
-      toLabel: to,
+      fromLabel,
+      toLabel,
       traffic,
       active: index === pulseIndex,
       related: edge.from === selectedId || edge.to === selectedId
     };
   });
+
   const visibleFlows = relatedFlows.filter((flow) => {
     if (graphFocus === "all") {
       return true;
@@ -163,8 +198,8 @@ export function App() {
 
     return flow.related;
   });
-  const visibleNodeIds = new Set<string>(["verbum-app", selectedId, focusedNodeId]);
 
+  const visibleNodeIds = new Set<string>(["verbum-app", selectedId, focusedNodeId]);
   for (const flow of visibleFlows) {
     visibleNodeIds.add(flow.from);
     visibleNodeIds.add(flow.to);
@@ -174,10 +209,26 @@ export function App() {
     .filter((message) => message.sourceId === selectedId)
     .slice(-3)
     .reverse();
+
   const liveMatches = [...searchDocuments]
     .map((document) => ({ document, score: scoreDocument(deferredQuery, document) }))
     .sort((left, right) => right.score - left.score)
     .slice(0, 4);
+
+  const tickerItems = [
+    ...busEvents.slice(-8).map((event) => ({
+      key: `event-${event}`,
+      label: "bus",
+      title: event,
+      meta: "global activity"
+    })),
+    ...globalMessages.slice(0, 10).map((message) => ({
+      key: message.id,
+      label: message.sourceLabel,
+      title: message.title,
+      meta: `${message.conversationTitle} · ${message.timestamp}`
+    }))
+  ];
 
   const tickPulse = useEffectEvent(() => {
     setPulseIndex((current) => (current + 1) % graphEdges.length);
@@ -194,6 +245,9 @@ export function App() {
     void window.verbumApp.getSnapshot().then((nextSnapshot) => {
       setSnapshot(nextSnapshot);
     });
+    void window.verbumApp.getSetupStatus().then((nextSetupStatus) => {
+      setSetupStatus(nextSetupStatus);
+    });
 
     unsubscribe = window.verbumApp.subscribe((nextSnapshot) => {
       setSnapshot(nextSnapshot);
@@ -201,6 +255,11 @@ export function App() {
 
     return () => unsubscribe();
   }, []);
+
+  const refreshSetupStatus = useEffectEvent(async () => {
+    const nextSetupStatus = await window.verbumApp.getSetupStatus();
+    setSetupStatus(nextSetupStatus);
+  });
 
   useEffect(() => {
     if (!snapshot) {
@@ -230,8 +289,8 @@ export function App() {
             <img alt="Verbum" className="brand-wordmark" src={verbumLogoDark} />
           </div>
           <span className="eyebrow">Verbum App</span>
-          <h1>Machine conversations, made legible.</h1>
-          <p>Master thread first. Graph above. Context on demand.</p>
+          <h1>Three first-class views for one machine.</h1>
+          <p>Chat for the working thread, Feed for everything moving, Graph for the system map.</p>
         </div>
         <div className="topbar-metrics">
           <article className="metric-card">
@@ -243,303 +302,210 @@ export function App() {
             <strong>{sources.filter((source) => source.connected).length}</strong>
           </article>
           <article className="metric-card">
-            <span>Active flow</span>
-            <strong>{activeEdge.label}</strong>
+            <span>Messages</span>
+            <strong>{allMessages.length}</strong>
           </article>
           <article className="metric-card">
-            <span>Thread</span>
-            <strong>{selectedConversation?.title ?? "Master conversation"}</strong>
+            <span>Focus</span>
+            <strong>{titleCase(activeTab)}</strong>
           </article>
         </div>
       </header>
 
-      <div className="bus-strip">
-        <div className="bus-marquee">
-          {[...busEvents, ...busEvents].map((event, index) => (
-            <span className="bus-pill" key={`${event}-${index}`}>
-              {event}
-            </span>
-          ))}
-        </div>
+      <div className="mode-tabs">
+        {([
+          ["chat", "Chat"],
+          ["feed", "Feed"],
+          ["graph", "Graph"]
+        ] as const).map(([value, label]) => (
+          <button
+            className={activeTab === value ? "mode-tab mode-tab-active" : "mode-tab"}
+            key={value}
+            onClick={() => setActiveTab(value)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      <div className="workspace">
-        <aside className="sidebar panel">
-          <div className="panel-head panel-head-inline">
-            <div>
-              <span className="eyebrow">Threads</span>
-              <p>Keep the master conversation in focus. Spawn side threads only when they earn it.</p>
-            </div>
-            <button
-              className="action-button"
-              onClick={() => {
-                void window.verbumApp
-                  .spawnConversation({ title: `Side thread ${conversations.length}` })
-                  .then((conversation) => setSelectedConversationId(conversation.id));
-              }}
-              type="button"
-            >
-              New thread
-            </button>
-          </div>
-
-          <div className="conversation-list">
-            {conversations.map((conversation: ConversationSummary) => {
-              const messageCount = allMessages.filter(
-                (message) => message.conversationId === conversation.id
-              ).length;
-
-              return (
-                <button
-                  className={`session-card ${
-                    conversation.id === selectedConversationId ? "session-card-active" : ""
-                  }`}
-                  key={conversation.id}
-                  onClick={() => setSelectedConversationId(conversation.id)}
-                  type="button"
-                >
-                  <div className="session-card-row">
-                    <strong>{conversation.title}</strong>
-                    <span>{conversation.status}</span>
-                  </div>
-                  <p>{messageCount} messages in thread</p>
-                  <small>Last activity {conversation.lastActivity}</small>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="sidebar-summary">
-            <div className="sidebar-stat">
-              <span>Route</span>
-              <strong>{sourceById.get(routeTo)?.name ?? routeTo}</strong>
-            </div>
-            <div className="sidebar-stat">
-              <span>Selected node</span>
-              <strong>{selectedDescriptor?.label ?? "Verbum App"}</strong>
-            </div>
-            <div className="sidebar-stat">
-              <span>Messages</span>
-              <strong>{feed.length} in view</strong>
-            </div>
-            <div className="sidebar-stat">
-              <span>Search docs</span>
-              <strong>{searchDocuments.length} indexed</strong>
-            </div>
-          </div>
-
-          <div className="panel-head">
-            <span className="eyebrow">Sources</span>
-            <p>Compact status only. The graph is the detailed source view.</p>
-          </div>
-          <div className="source-palette">
-            {sources.map((source: SourceDescriptor) => (
+      {activeTab === "chat" ? (
+        <div className="tab-layout chat-layout">
+          <aside className="panel thread-rail">
+            <div className="panel-head panel-head-inline">
+              <div>
+                <span className="eyebrow">Threads</span>
+                <p>One master conversation, plus side threads when a task needs to split off.</p>
+              </div>
               <button
-                className={`source-pill ${source.id === selectedId ? "source-pill-active" : ""}`}
-                key={source.id}
+                className="action-button"
                 onClick={() => {
-                  setSelectedId(source.id);
-                  setRouteTo(source.id);
+                  void window.verbumApp
+                    .spawnConversation({ title: `Side thread ${conversations.length}` })
+                    .then((conversation) => setSelectedConversationId(conversation.id));
                 }}
                 type="button"
               >
-                <span className={`status-dot ${source.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
-                {source.name}
+                New
               </button>
-            ))}
-          </div>
-        </aside>
-
-        <main className="center-column">
-          <section className="panel graph-panel">
-            <div className="panel-head panel-head-inline">
-              <div>
-                <span className="eyebrow">Conversation Graph</span>
-                <p>Dense enough to debug. Calm enough to understand at a glance.</p>
-              </div>
-              <span className="status-pill">{relatedFlows.filter((flow) => flow.active).length} active path</span>
             </div>
 
-            <div className="graph-summary-grid">
-              <article className="graph-summary-card">
-                <span>Selected</span>
-                <strong>{selectedDescriptor.label}</strong>
-                <p>{selectedDescriptor.messageCount} messages touching this node</p>
-              </article>
-              <article className="graph-summary-card">
-                <span>Current flow</span>
-                <strong>{activeEdge.label}</strong>
-                <p>
-                  {graphNodes.find((node) => node.id === activeEdge.from)?.label} to{" "}
-                  {graphNodes.find((node) => node.id === activeEdge.to)?.label}
-                </p>
-              </article>
-              <article className="graph-summary-card">
-                <span>Connected sources</span>
-                <strong>{sources.filter((source) => source.connected).length}</strong>
-                <p>{sources.length} total visible participants</p>
-              </article>
+            <div className="conversation-list">
+              {conversationSections.map((section) => (
+                <section className="conversation-section" key={section.key}>
+                  <span className="eyebrow">{section.label}</span>
+                  <div className="conversation-section-list">
+                    {section.items.map((conversation: ConversationSummary) => {
+                      const count = allMessages.filter(
+                        (message) => message.conversationId === conversation.id
+                      ).length;
+
+                      return (
+                        <button
+                          className={`session-card ${
+                            conversation.id === selectedConversationId ? "session-card-active" : ""
+                          }`}
+                          key={conversation.id}
+                          onClick={() => setSelectedConversationId(conversation.id)}
+                          type="button"
+                        >
+                          <div className="session-card-row">
+                            <strong>{conversation.title}</strong>
+                            <span>{conversation.sourceLabel ?? conversation.status}</span>
+                          </div>
+                          <p>{count} messages</p>
+                          <small>
+                            {conversation.externalThreadId
+                              ? `Thread ${conversation.externalThreadId.slice(0, 8)} · `
+                              : ""}
+                            Last activity {conversation.lastActivity}
+                          </small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
+          </aside>
 
-            <div className="graph-stage">
-              <div className="graph-grid" aria-hidden></div>
-              <div className="graph-orbit graph-orbit-a" aria-hidden></div>
-              <div className="graph-orbit graph-orbit-b" aria-hidden></div>
-              <div
-                className="graph-spotlight"
-                style={{
-                  left: `${focusedDescriptor.x}%`,
-                  top: `${focusedDescriptor.y}%`
-                }}
-              ></div>
-
-              <div className="graph-hud">
-                <span className="eyebrow">Selected Node</span>
-                <h2>{selectedDescriptor.label}</h2>
-                <p>{selectedDescriptor.detail}</p>
-                <div className="graph-hud-stats">
-                  <div>
-                    <span>Status</span>
-                    <strong>{selectedDescriptor.status}</strong>
-                  </div>
-                  <div>
-                    <span>Edges</span>
-                    <strong>
-                      {selectedDescriptor.inbound} in / {selectedDescriptor.outbound} out
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Mode</span>
-                    <strong>{selectedDescriptor.accent}</strong>
-                  </div>
+          <section className="panel conversation-workspace">
+            {needsSetup ? (
+              <section className="setup-panel">
+                <div className="setup-panel-copy">
+                  <span className="eyebrow">Setup Assistant</span>
+                  <h3>Finish the machine-level install.</h3>
+                  <p>
+                    Verbum App is installed, but the `verbum-ai` package and the background helper still
+                    need to be set up on this machine.
+                  </p>
                 </div>
-              </div>
 
-              <div className="graph-toolbar">
-                {([
-                  ["selected", "Selected"],
-                  ["live", "Live"],
-                  ["all", "All"]
-                ] as const).map(([value, label]) => (
-                  <button
-                    className={graphFocus === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
-                    key={value}
-                    onClick={() => setGraphFocus(value)}
-                    type="button"
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="graph-flow-rail">
-                <span className="eyebrow">Live Flows</span>
-                <div className="graph-flow-list">
-                  {visibleFlows.map((flow) => (
+                <div className="setup-grid">
+                  <article className="setup-card">
+                    <div className="setup-card-row">
+                      <strong>Core package</strong>
+                      <span>{setupStatus?.packageInstalled ? `v${setupStatus.packageVersion}` : "Not installed"}</span>
+                    </div>
+                    <p>Installs the global `verbum-ai` package so engineers can use the framework and CLI locally.</p>
                     <button
-                      className={`graph-flow-item ${
-                        flow.active ? "graph-flow-item-active" : ""
-                      } ${flow.related ? "graph-flow-item-related" : ""}`}
-                      key={`${flow.from}-${flow.to}`}
+                      className="setup-action"
+                      disabled={setupBusy !== null}
                       onClick={() => {
-                        const nextNodeId = flow.from === selectedId ? flow.to : flow.from;
-                        setSelectedId(nextNodeId);
-                        setDetailTab("inspector");
+                        setSetupBusy("package");
+                        setSetupNotice("");
+                        void window.verbumApp
+                          .installCorePackage()
+                          .then((result) => {
+                            setSetupNotice(result);
+                            return refreshSetupStatus();
+                          })
+                          .catch((error: unknown) => {
+                            setSetupNotice(error instanceof Error ? error.message : String(error));
+                          })
+                          .finally(() => setSetupBusy(null));
                       }}
                       type="button"
                     >
-                      <strong>{flow.label}</strong>
-                      <span>
-                        {flow.fromLabel} to {flow.toLabel}
-                      </span>
-                      <b>{flow.traffic} touches</b>
+                      {setupBusy === "package"
+                        ? "Installing..."
+                        : setupStatus?.packageInstalled
+                          ? "Reinstall package"
+                          : "Install package"}
                     </button>
-                  ))}
+                  </article>
+
+                  <article className="setup-card">
+                    <div className="setup-card-row">
+                      <strong>Helper service</strong>
+                      <span>
+                        {setupStatus?.serviceRunning
+                          ? "Running"
+                          : setupStatus?.serviceInstalled
+                            ? "Installed"
+                            : "Not installed"}
+                      </span>
+                    </div>
+                    <p>Registers a LaunchAgent so Verbum can keep a local machine heartbeat outside the app window.</p>
+                    <button
+                      className="setup-action"
+                      disabled={setupBusy !== null}
+                      onClick={() => {
+                        setSetupBusy("service");
+                        setSetupNotice("");
+                        void window.verbumApp
+                          .installHelperService()
+                          .then((result) => {
+                            setSetupNotice(result);
+                            return refreshSetupStatus();
+                          })
+                          .catch((error: unknown) => {
+                            setSetupNotice(error instanceof Error ? error.message : String(error));
+                          })
+                          .finally(() => setSetupBusy(null));
+                      }}
+                      type="button"
+                    >
+                      {setupBusy === "service"
+                        ? "Installing..."
+                        : setupStatus?.serviceRunning
+                          ? "Reinstall service"
+                          : "Install service"}
+                    </button>
+                  </article>
+
+                  <article className="setup-card setup-card-compact">
+                    <div className="setup-card-row">
+                      <strong>Sources</strong>
+                      <span>
+                        {setupStatus?.claudeInstalled ? "Claude ready" : "Claude missing"} /{" "}
+                        {setupStatus?.codexInstalled ? "Codex ready" : "Codex missing"}
+                      </span>
+                    </div>
+                    <p>
+                      {setupStatus?.gatekeeperWarning
+                        ? "This build is not notarized yet. If macOS blocks it, use Open Anyway in Privacy & Security or remove quarantine manually."
+                        : "macOS security checks look clean."}
+                    </p>
+                    <code className="setup-command">xattr -dr com.apple.quarantine /Applications/Verbum.app</code>
+                  </article>
                 </div>
-              </div>
 
-              <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-                {relatedFlows.map((edge, index) => {
-                  const from = graphNodes.find((node) => node.id === edge.from);
-                  const to = graphNodes.find((node) => node.id === edge.to);
+                {setupNotice ? <p className="setup-notice">{setupNotice}</p> : null}
+              </section>
+            ) : null}
 
-                  if (!from || !to || !visibleFlows.some((flow) => flow.from === edge.from && flow.to === edge.to)) {
-                    return null;
-                  }
-
-                  const curve = `M ${from.x} ${from.y} C ${from.x} ${(from.y + to.y) / 2 - 12}, ${to.x} ${(from.y + to.y) / 2 + 12}, ${to.x} ${to.y}`;
-                  return (
-                    <g key={`${edge.from}-${edge.to}`}>
-                      <path
-                        className={index === pulseIndex ? "graph-path graph-path-active" : "graph-path"}
-                        d={curve}
-                      />
-                      {index === pulseIndex ? (
-                        <>
-                          <circle className="graph-packet" r="1.1">
-                            <animateMotion dur="2.4s" repeatCount="indefinite" path={curve} />
-                          </circle>
-                          <circle className="graph-packet graph-packet-delayed" r="0.9">
-                            <animateMotion
-                              begin="0.7s"
-                              dur="2.4s"
-                              repeatCount="indefinite"
-                              path={curve}
-                            />
-                          </circle>
-                        </>
-                      ) : null}
-                    </g>
-                  );
-                })}
-              </svg>
-
-              {graphDescriptors.map((node) => (
-                <button
-                  className={`graph-node graph-node-${node.type} ${
-                    node.id === selectedId ? "graph-node-active" : ""
-                  } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""}`}
-                  key={node.id}
-                  onClick={() => {
-                    setSelectedId(node.id);
-                    setDetailTab("inspector");
-                  }}
-                  onMouseEnter={() => setHoveredNodeId(node.id)}
-                  onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
-                  style={{
-                    left: `${node.x}%`,
-                    top: `${node.y}%`,
-                    transform: `translate(-50%, -50%) translateZ(${node.z}px) scale(${
-                      node.id === focusedNodeId ? 1.04 : visibleNodeIds.has(node.id) ? 1 : 0.94
-                    })`
-                  }}
-                  type="button"
-                >
-                  <div className="graph-node-row">
-                    <span className="graph-node-kind">{node.accent}</span>
-                    <span className={`status-dot ${node.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
-                  </div>
-                  <strong>{node.label}</strong>
-                  <p>{node.summary}</p>
-                  <div className="graph-node-meta">
-                    <span>{node.messageCount} msgs</span>
-                    <span>
-                      {node.inbound}/{node.outbound} edges
-                    </span>
-                  </div>
-                  <div className="graph-node-spark"></div>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel terminal-panel">
             <div className="panel-head panel-head-inline">
               <div>
-                <span className="eyebrow">Conversation Feed</span>
-                <p>The selected thread is the primary working surface.</p>
+                <span className="eyebrow">Conversation</span>
+                <h2>{selectedConversation?.title ?? "Master conversation"}</h2>
+                <p>
+                  {selectedConversation?.kind === "imported"
+                    ? `${selectedConversation.sourceLabel ?? "Imported"} thread mirrored into Verbum.`
+                    : "The working thread stays front and center."}
+                </p>
               </div>
-              <span className="status-pill">{feed.length} messages</span>
+              <span className="status-pill">{threadMessages.length} messages</span>
             </div>
 
             <div className="demo-toolbar">
@@ -591,173 +557,376 @@ export function App() {
               </button>
             </div>
 
-            <div className="feed-layout">
-              <div className="message-feed">
-                {feed.map((message) => (
-                  <MessageRenderer key={message.id} message={message} />
-                ))}
-              </div>
-
-              <div className="terminal-grid">
-                {terminals.map((terminal) => (
-                  <article className="terminal-card" key={terminal.id}>
-                    <div className="terminal-card-head">
-                      <strong>{terminal.title}</strong>
-                      <span>{compactPath(terminal.cwd)}</span>
-                    </div>
-                    <pre>{terminal.lines.join("\n")}</pre>
-                  </article>
-                ))}
-              </div>
+            <div className="message-feed">
+              {threadMessages.map((message) => (
+                <MessageRenderer key={message.id} message={message} />
+              ))}
             </div>
           </section>
-        </main>
 
-        <aside className="detail-column panel">
-          <div className="detail-tabs">
-            <button
-              className={detailTab === "inspector" ? "detail-tab detail-tab-active" : "detail-tab"}
-              onClick={() => setDetailTab("inspector")}
-              type="button"
-            >
-              Inspector
-            </button>
-            <button
-              className={detailTab === "search" ? "detail-tab detail-tab-active" : "detail-tab"}
-              onClick={() => setDetailTab("search")}
-              type="button"
-            >
-              Search
-            </button>
-          </div>
+          <aside className="panel tab-inspector">
+            <div className="panel-head">
+              <span className="eyebrow">Inspector</span>
+              <h2>{selectedSource.name}</h2>
+              <p>{selectedSource.subtitle}</p>
+            </div>
 
-          {detailTab === "inspector" ? (
-            <div className="detail-panel-body">
+            <div className="inspector-metrics">
+              <div>
+                <span>Route</span>
+                <strong>{selectedSource.name}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>{selectedSource.status}</strong>
+              </div>
+              <div>
+                <span>Typed support</span>
+                <strong>{selectedSource.typing}</strong>
+              </div>
+            </div>
+
+            <div className="source-palette">
+              {sources.map((source: SourceDescriptor) => (
+                <button
+                  className={`source-pill ${source.id === routeTo ? "source-pill-active" : ""}`}
+                  key={source.id}
+                  onClick={() => setRouteTo(source.id)}
+                  type="button"
+                >
+                  <span className={`status-dot ${source.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
+                  {source.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="terminal-grid">
+              {terminals.map((terminal) => (
+                <article className="terminal-card" key={terminal.id}>
+                  <div className="terminal-card-head">
+                    <strong>{terminal.title}</strong>
+                    <span>{compactPath(terminal.cwd)}</span>
+                  </div>
+                  <pre>{terminal.lines.join("\n")}</pre>
+                </article>
+              ))}
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {activeTab === "feed" ? (
+        <div className="tab-layout feed-layout-tab">
+          <section className="panel feed-main">
+            <div className="panel-head panel-head-inline">
+              <div>
+                <span className="eyebrow">Global Feed</span>
+                <h2>Everything moving across the machine.</h2>
+                <p>A unified stream of bus events, model replies, tool activity, and terminal work.</p>
+              </div>
+              <span className="status-pill">{globalMessages.length} total messages</span>
+            </div>
+
+            <div className="feed-activity-grid">
+              <article className="graph-summary-card">
+                <span>Latest path</span>
+                <strong>{activeEdge.label}</strong>
+                <p>
+                  {graphNodes.find((node) => node.id === activeEdge.from)?.label} to{" "}
+                  {graphNodes.find((node) => node.id === activeEdge.to)?.label}
+                </p>
+              </article>
+              <article className="graph-summary-card">
+                <span>Bus events</span>
+                <strong>{busEvents.length}</strong>
+                <p>High-level activity crossing the whole system.</p>
+              </article>
+              <article className="graph-summary-card">
+                <span>Connected sources</span>
+                <strong>{sources.filter((source) => source.connected).length}</strong>
+                <p>Visible participants contributing to the feed.</p>
+              </article>
+            </div>
+
+            <div className="global-feed-list">
+              {globalMessages.map((message) => (
+                <MessageRenderer key={message.id} message={message} />
+              ))}
+            </div>
+          </section>
+
+          <aside className="feed-side">
+            <section className="panel ticker-panel">
               <div className="panel-head">
-                <span className="eyebrow">Context</span>
-                <h2>{selectedDescriptor.label}</h2>
-                <p>{selectedDescriptor.detail}</p>
+                <span className="eyebrow">Ticker</span>
+                <p>A downward-running activity stream for the whole machine.</p>
               </div>
-
-              <div className="inspector-metrics">
-                <div>
-                  <span>Source</span>
-                  <strong>{selectedSource.name}</strong>
-                </div>
-                <div>
-                  <span>Thread</span>
-                  <strong>{selectedConversation?.title ?? "Master conversation"}</strong>
-                </div>
-                <div>
-                  <span>Typed support</span>
-                  <strong>{selectedSource.typing}</strong>
+              <div className="ticker-window">
+                <div className="ticker-track">
+                  {[...tickerItems, ...tickerItems].map((item, index) => (
+                    <article className="ticker-item" key={`${item.key}-${index}`}>
+                      <span>{item.label}</span>
+                      <strong>{item.title}</strong>
+                      <p>{item.meta}</p>
+                    </article>
+                  ))}
                 </div>
               </div>
+            </section>
 
-              <div className="thread">
-                {(selectedNodeMessages.length > 0 ? selectedNodeMessages : inboxThread).map((entry, index) => (
-                  <article className="thread-item" key={("id" in entry ? entry.id : `${entry.author}-${index}`)}>
-                    <strong>{"title" in entry ? entry.title : entry.author}</strong>
-                    <span>
-                      {"sourceLabel" in entry
-                        ? `${entry.sourceLabel} · ${entry.timestamp}`
-                        : entry.route}
-                    </span>
-                    <p>
-                      {"blocks" in entry
-                        ? entry.blocks
-                            .map((block) => ("text" in block ? block.text : "Structured event"))
-                            .join(" ")
-                        : entry.text}
-                    </p>
+            <section className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">Source Activity</span>
+                <p>Quick source health without leaving the feed.</p>
+              </div>
+              <div className="source-stack">
+                {sources.map((source) => (
+                  <article className="activity-card" key={source.id}>
+                    <div className="activity-card-row">
+                      <strong>{source.name}</strong>
+                      <span>{messageCountBySource.get(source.id) ?? 0} msgs</span>
+                    </div>
+                    <p>{source.subtitle}</p>
                   </article>
                 ))}
               </div>
-            </div>
-          ) : (
-            <div className="detail-panel-body">
-              <div className="panel-head">
-                <span className="eyebrow">Conversational Search</span>
-                <p>Ask when you need context. Otherwise stay in the thread.</p>
+            </section>
+          </aside>
+        </div>
+      ) : null}
+
+      {activeTab === "graph" ? (
+        <div className="tab-layout graph-layout">
+          <section className="panel graph-workspace">
+            <div className="panel-head panel-head-inline">
+              <div>
+                <span className="eyebrow">Conversation Graph</span>
+                <h2>System map, not decoration.</h2>
+                <p>Nodes shrink to fit. Inspector carries the detail.</p>
               </div>
-
-              <form
-                className="search-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const question = query.trim();
-                  if (!question) {
-                    return;
-                  }
-
-                  const answer = answerQuery(question);
-                  startTransition(() => {
-                    setSearchTurns((current) => [
-                      ...current,
-                      { role: "user", content: question },
-                      { role: "assistant", content: answer.summary, citations: answer.citations }
-                    ]);
-                  });
-                }}
-              >
-                <input
-                  className="search-input"
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Ask about the graph, threads, or launch"
-                  value={query}
-                />
-                <button className="search-button" type="submit">
-                  Ask
-                </button>
-              </form>
-
-              <div className="chip-row">
-                {[
-                  "Why is this better than a dashboard?",
-                  "How do terminals appear in the app?",
-                  "Why keep the master thread central?"
-                ].map((chip) => (
-                  <button className="chip" key={chip} onClick={() => setQuery(chip)} type="button">
-                    {chip}
+              <div className="graph-toolbar-shell">
+                {([
+                  ["selected", "Selected"],
+                  ["live", "Live"],
+                  ["all", "All"]
+                ] as const).map(([value, label]) => (
+                  <button
+                    className={graphFocus === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
+                    key={value}
+                    onClick={() => setGraphFocus(value)}
+                    type="button"
+                  >
+                    {label}
                   </button>
                 ))}
               </div>
+            </div>
 
-              <div className="search-log">
-                {searchTurns.map((turn, index) => (
-                  <article className={`search-turn search-turn-${turn.role}`} key={`${turn.role}-${index}`}>
-                    <span>{turn.role === "user" ? "You" : "Verbum Search"}</span>
-                    <p>{turn.content}</p>
-                    {turn.citations ? (
-                      <div className="citation-row">
-                        {turn.citations.map((citation) => (
-                          <b className="citation" key={citation.id}>
-                            {citation.kind}: {citation.title}
-                          </b>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
+            <div className="graph-summary-grid">
+              <article className="graph-summary-card">
+                <span>Focused node</span>
+                <strong>{focusedDescriptor.label}</strong>
+                <p>{focusedDescriptor.messageCount} messages touching it</p>
+              </article>
+              <article className="graph-summary-card">
+                <span>Visible flows</span>
+                <strong>{visibleFlows.length}</strong>
+                <p>{graphFocus === "all" ? "Whole topology" : "Filtered graph view"}</p>
+              </article>
+              <article className="graph-summary-card">
+                <span>Active edge</span>
+                <strong>{activeEdge.label}</strong>
+                <p>
+                  {graphNodes.find((node) => node.id === activeEdge.from)?.label} to{" "}
+                  {graphNodes.find((node) => node.id === activeEdge.to)?.label}
+                </p>
+              </article>
+            </div>
+
+            <div className="graph-stage graph-stage-clean">
+              <div className="graph-grid" aria-hidden></div>
+              <div className="graph-orbit graph-orbit-a" aria-hidden></div>
+              <div className="graph-orbit graph-orbit-b" aria-hidden></div>
+              <div
+                className="graph-spotlight"
+                style={{
+                  left: `${focusedDescriptor.x}%`,
+                  top: `${focusedDescriptor.y}%`
+                }}
+              ></div>
+
+              <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+                {relatedFlows.map((edge, index) => {
+                  const from = graphNodes.find((node) => node.id === edge.from);
+                  const to = graphNodes.find((node) => node.id === edge.to);
+
+                  if (!from || !to || !visibleFlows.some((flow) => flow.from === edge.from && flow.to === edge.to)) {
+                    return null;
+                  }
+
+                  const curve = `M ${from.x} ${from.y} C ${from.x} ${(from.y + to.y) / 2 - 12}, ${to.x} ${(from.y + to.y) / 2 + 12}, ${to.x} ${to.y}`;
+                  return (
+                    <g key={`${edge.from}-${edge.to}`}>
+                      <path
+                        className={index === pulseIndex ? "graph-path graph-path-active" : "graph-path"}
+                        d={curve}
+                      />
+                      {index === pulseIndex ? (
+                        <>
+                          <circle className="graph-packet" r="1.05">
+                            <animateMotion dur="2.4s" repeatCount="indefinite" path={curve} />
+                          </circle>
+                          <circle className="graph-packet graph-packet-delayed" r="0.85">
+                            <animateMotion
+                              begin="0.7s"
+                              dur="2.4s"
+                              repeatCount="indefinite"
+                              path={curve}
+                            />
+                          </circle>
+                        </>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </svg>
+
+              {graphDescriptors.map((node) => (
+                <button
+                  className={`graph-node graph-node-${node.type} ${
+                    node.id === selectedId ? "graph-node-active" : ""
+                  } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""}`}
+                  key={node.id}
+                  onClick={() => setSelectedId(node.id)}
+                  onMouseEnter={() => setHoveredNodeId(node.id)}
+                  onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
+                  style={{
+                    left: `${node.x}%`,
+                    top: `${node.y}%`
+                  }}
+                  type="button"
+                >
+                  <div className="graph-node-topline">
+                    <strong>{node.label}</strong>
+                    <span className={`status-dot ${node.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
+                  </div>
+                  <span className="graph-node-kind">{node.mode}</span>
+                  <div className="graph-node-stats">
+                    <b>{node.messageCount}</b>
+                    <span>{node.status}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <aside className="panel graph-inspector">
+            <div className="panel-head">
+              <span className="eyebrow">Inspector</span>
+              <h2>{focusedDescriptor.label}</h2>
+              <p>{focusedDescriptor.detail}</p>
+            </div>
+
+            <div className="inspector-metrics">
+              <div>
+                <span>Status</span>
+                <strong>{focusedDescriptor.status}</strong>
               </div>
-
-              <div className="live-matches">
-                <strong>Live matches</strong>
-                <ul>
-                  {liveMatches.map(({ document, score }) => (
-                    <li key={document.id}>
-                      <span>
-                        {document.title} · {score}
-                      </span>
-                      <p>{document.excerpt}</p>
-                    </li>
-                  ))}
-                </ul>
+              <div>
+                <span>Edges</span>
+                <strong>
+                  {focusedDescriptor.inbound} in / {focusedDescriptor.outbound} out
+                </strong>
+              </div>
+              <div>
+                <span>Mode</span>
+                <strong>{focusedDescriptor.mode}</strong>
               </div>
             </div>
-          )}
-        </aside>
-      </div>
+
+            <div className="graph-flow-list">
+              {visibleFlows.map((flow) => (
+                <button
+                  className={`graph-flow-item ${
+                    flow.active ? "graph-flow-item-active" : ""
+                  } ${flow.related ? "graph-flow-item-related" : ""}`}
+                  key={`${flow.from}-${flow.to}`}
+                  onClick={() => setSelectedId(flow.from === selectedId ? flow.to : flow.from)}
+                  type="button"
+                >
+                  <strong>{flow.label}</strong>
+                  <span>
+                    {flow.fromLabel} to {flow.toLabel}
+                  </span>
+                  <b>{flow.traffic} touches</b>
+                </button>
+              ))}
+            </div>
+
+            <form
+              className="search-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const question = query.trim();
+                if (!question) {
+                  return;
+                }
+
+                const answer = answerQuery(question);
+                startTransition(() => {
+                  setSearchTurns((current) => [
+                    ...current,
+                    { role: "user", content: question },
+                    { role: "assistant", content: answer.summary, citations: answer.citations }
+                  ]);
+                });
+              }}
+            >
+              <input
+                className="search-input"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Ask about this graph"
+                value={query}
+              />
+              <button className="search-button" type="submit">
+                Ask
+              </button>
+            </form>
+
+            <div className="search-log">
+              {searchTurns.slice(-4).map((turn, index) => (
+                <article className={`search-turn search-turn-${turn.role}`} key={`${turn.role}-${index}`}>
+                  <span>{turn.role === "user" ? "You" : "Verbum Search"}</span>
+                  <p>{turn.content}</p>
+                  {turn.citations ? (
+                    <div className="citation-row">
+                      {turn.citations.map((citation) => (
+                        <b className="citation" key={citation.id}>
+                          {citation.kind}: {citation.title}
+                        </b>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+
+            <div className="live-matches">
+              <strong>Live matches</strong>
+              <ul>
+                {liveMatches.map(({ document, score }) => (
+                  <li key={document.id}>
+                    <span>
+                      {document.title} · {score}
+                    </span>
+                    <p>{document.excerpt}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -61,11 +61,30 @@ export interface BridgeSnapshot {
   }>;
 }
 
+export interface SetupStatus {
+  nodeInstalled: boolean;
+  npmInstalled: boolean;
+  packageInstalled: boolean;
+  packageVersion?: string;
+  serviceInstalled: boolean;
+  serviceRunning: boolean;
+  serviceLabel: string;
+  serviceStatusPath: string;
+  gatekeeperWarning: boolean;
+  claudeInstalled: boolean;
+  codexInstalled: boolean;
+}
+
 export interface ConversationSummary {
   id: string;
   title: string;
+  kind?: "master" | "side" | "imported";
   status: "master" | "active" | "background";
   lastActivity: string;
+  sourceId?: string;
+  sourceLabel?: string;
+  externalThreadId?: string;
+  cwd?: string;
 }
 
 export interface SendMessageRequest {

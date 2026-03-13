@@ -1,9 +1,9 @@
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync, readdirSync, statSync, watch } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 
 import type {
   AppMessage,
@@ -12,6 +12,7 @@ import type {
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,
+  SetupStatus,
   SpawnConversationRequest,
   SourceDescriptor,
   TerminalSession
@@ -23,6 +24,12 @@ interface ClaudeTaskFile {
   description?: string;
   activeForm?: string;
   status?: string;
+}
+
+interface CodexSessionIndexEntry {
+  id?: string;
+  thread_name?: string;
+  updated_at?: string;
 }
 
 interface CustomSourceConfig {
@@ -44,14 +51,26 @@ export class BridgeManager extends EventEmitter<{
 }> {
   private readonly version = "0.1.0";
   private readonly workspaceRoot: string;
+  private readonly verbumConfigDir = join(homedir(), ".config", "verbum");
+  private readonly serviceLabel = "ai.verbum.helper";
+  private readonly serviceScriptPath = join(homedir(), ".config", "verbum", "helper.mjs");
+  private readonly serviceStatusPath = join(homedir(), ".config", "verbum", "helper-status.json");
+  private readonly serviceLogPath = join(homedir(), ".config", "verbum", "helper.log");
+  private readonly servicePlistPath = join(homedir(), "Library", "LaunchAgents", "ai.verbum.helper.plist");
   private readonly claudeTasksDir = join(homedir(), ".claude", "tasks");
+  private readonly codexSessionIndexPath = join(homedir(), ".codex", "session_index.jsonl");
+  private readonly codexSessionsDir = join(homedir(), ".codex", "sessions");
   private readonly conversations = new Map<string, ConversationSummary>();
   private readonly sources = new Map<string, SourceDescriptor>();
   private readonly messages: AppMessage[] = [];
   private readonly busEvents: string[] = [];
   private readonly terminals = new Map<string, TerminalSession>();
   private readonly processedClaudeFiles = new Set<string>();
+  private readonly codexThreadNames = new Map<string, string>();
+  private readonly codexProcessedLineCounts = new Map<string, number>();
+  private readonly attachedCodexSessions = new Set<string>();
   private customSourceProcessesStarted = false;
+  private codexPollingTimer?: NodeJS.Timeout;
 
   constructor() {
     super();
@@ -68,6 +87,7 @@ export class BridgeManager extends EventEmitter<{
   start(): void {
     this.detectBuiltIns();
     this.startClaudeTaskWatcher();
+    this.startCodexSessionWatcher();
     this.startCustomSources();
     this.emitSnapshot();
   }
@@ -199,6 +219,7 @@ export class BridgeManager extends EventEmitter<{
     const summary: ConversationSummary = {
       id,
       title: request.title?.trim() || `Side thread ${this.conversations.size}`,
+      kind: "side",
       status: "active",
       lastActivity: timestamp()
     };
@@ -232,6 +253,68 @@ export class BridgeManager extends EventEmitter<{
       sessionId: "shell-2",
       command: "find ~/.claude/tasks -maxdepth 2 -type f | head -n 6"
     });
+  }
+
+  getSetupStatus(): SetupStatus {
+    const nodeBinary = findExecutable(["node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]);
+    const npmBinary = findExecutable(["npm", "/opt/homebrew/bin/npm", "/usr/local/bin/npm"]);
+    const claudeBinary = this.sources.get("claude-code")?.command ?? findExecutable(["claude", "/opt/homebrew/bin/claude"]);
+    const codexBinary = this.sources.get("codex")?.command ?? findExecutable(["codex", "/opt/homebrew/bin/codex"]);
+    const packageVersion = npmBinary ? readGlobalPackageVersion(npmBinary, "verbum-ai") : null;
+
+    return {
+      nodeInstalled: Boolean(nodeBinary),
+      npmInstalled: Boolean(npmBinary),
+      packageInstalled: Boolean(packageVersion),
+      packageVersion: packageVersion ?? undefined,
+      serviceInstalled: existsSync(this.serviceScriptPath) && existsSync(this.servicePlistPath),
+      serviceRunning: isLaunchAgentRunning(this.serviceLabel),
+      serviceLabel: this.serviceLabel,
+      serviceStatusPath: this.serviceStatusPath,
+      gatekeeperWarning: true,
+      claudeInstalled: Boolean(claudeBinary),
+      codexInstalled: Boolean(codexBinary)
+    };
+  }
+
+  async installCorePackage(): Promise<string> {
+    const npmBinary = findExecutable(["npm", "/opt/homebrew/bin/npm", "/usr/local/bin/npm"]);
+    if (!npmBinary) {
+      throw new Error("npm is not installed on this machine.");
+    }
+
+    const packageAssetUrl = `https://github.com/Bbasche/verbum-ai/releases/download/v${this.version}/verbum-ai-${this.version}.tgz`;
+    const output = await spawnToString(npmBinary, ["install", "-g", packageAssetUrl], this.workspaceRoot);
+    this.pushBusEvent("Installed verbum-ai globally");
+    this.emitSnapshot();
+    return output || `Installed verbum-ai globally from ${packageAssetUrl}.`;
+  }
+
+  async installHelperService(): Promise<string> {
+    const nodeBinary = findExecutable(["node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]);
+    if (!nodeBinary) {
+      throw new Error("Node.js is required before Verbum can install its helper service.");
+    }
+
+    mkdirSync(this.verbumConfigDir, { recursive: true });
+    mkdirSync(join(homedir(), "Library", "LaunchAgents"), { recursive: true });
+
+    writeFileSync(this.serviceScriptPath, helperScriptContents(this.serviceStatusPath), "utf8");
+    writeFileSync(this.servicePlistPath, launchAgentPlistContents({
+      label: this.serviceLabel,
+      nodeBinary,
+      scriptPath: this.serviceScriptPath,
+      logPath: this.serviceLogPath
+    }), "utf8");
+
+    const uid = currentUid();
+    runLaunchctl(["bootout", `gui/${uid}`, this.servicePlistPath]);
+    runLaunchctl(["bootstrap", `gui/${uid}`, this.servicePlistPath]);
+    runLaunchctl(["kickstart", "-k", `gui/${uid}/${this.serviceLabel}`]);
+
+    this.pushBusEvent("Installed Verbum helper service");
+    this.emitSnapshot();
+    return `Installed and started ${this.serviceLabel}.`;
   }
 
   private loadConfig(): VerbumAppConfig {
@@ -363,8 +446,11 @@ export class BridgeManager extends EventEmitter<{
     this.conversations.set("master", {
       id: "master",
       title: "Master conversation",
+      kind: "master",
       status: "master",
-      lastActivity: timestamp()
+      lastActivity: timestamp(),
+      sourceId: "verbum-app",
+      sourceLabel: "Verbum App"
     });
     this.pushMessage({
       id: randomUUID(),
@@ -393,6 +479,7 @@ export class BridgeManager extends EventEmitter<{
   private detectBuiltIns(): void {
     const claude = findExecutable(["claude", "/opt/homebrew/bin/claude"]);
     const codex = findExecutable(["codex", "/Applications/Codex.app/Contents/Resources/codex"]);
+    const codexDesktopSessions = existsSync(this.codexSessionIndexPath) || existsSync(this.codexSessionsDir);
 
     this.updateSource("claude-code", {
       connected: Boolean(claude),
@@ -400,8 +487,14 @@ export class BridgeManager extends EventEmitter<{
       command: claude ?? undefined
     });
     this.updateSource("codex", {
-      connected: Boolean(codex),
-      status: codex ? "connected" : "not installed",
+      connected: Boolean(codex) || codexDesktopSessions,
+      status: codexDesktopSessions
+        ? codex
+          ? "watching desktop + cli"
+          : "watching desktop"
+        : codex
+          ? "connected"
+          : "not installed",
       command: codex ?? undefined
     });
 
@@ -411,6 +504,10 @@ export class BridgeManager extends EventEmitter<{
 
     if (codex) {
       this.pushBusEvent("Codex detected");
+    }
+
+    if (codexDesktopSessions) {
+      this.pushBusEvent("Codex desktop sessions detected");
     }
   }
 
@@ -434,6 +531,177 @@ export class BridgeManager extends EventEmitter<{
         this.ingestClaudeTaskFile(join(this.claudeTasksDir, filename));
       }
     );
+  }
+
+  private startCodexSessionWatcher(): void {
+    if (!existsSync(this.codexSessionIndexPath) && !existsSync(this.codexSessionsDir)) {
+      return;
+    }
+
+    this.refreshCodexSessionIndex();
+    this.ingestRecentCodexSessions();
+
+    this.codexPollingTimer = setInterval(() => {
+      this.refreshCodexSessionIndex();
+      this.ingestRecentCodexSessions();
+    }, 1600);
+  }
+
+  private refreshCodexSessionIndex(): void {
+    if (!existsSync(this.codexSessionIndexPath)) {
+      return;
+    }
+
+    try {
+      const lines = readFileSync(this.codexSessionIndexPath, "utf8")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      for (const line of lines) {
+        const entry = JSON.parse(line) as CodexSessionIndexEntry;
+        if (!entry.id) {
+          continue;
+        }
+
+        this.codexThreadNames.set(entry.id, entry.thread_name?.trim() || `Codex thread ${entry.id.slice(0, 8)}`);
+      }
+    } catch {
+      // Ignore partial writes in the index file.
+    }
+  }
+
+  private ingestRecentCodexSessions(): void {
+    if (!existsSync(this.codexSessionsDir)) {
+      return;
+    }
+
+    const recentFiles = listRecentFilesByExtension(this.codexSessionsDir, ".jsonl", 10);
+    let importedCount = 0;
+
+    for (const filePath of recentFiles) {
+      importedCount += this.ingestCodexSessionFile(filePath);
+    }
+
+    if (recentFiles.length > 0) {
+      this.updateSource("codex", {
+        connected: true,
+        status: importedCount > 0 ? `watching ${importedCount} thread${importedCount === 1 ? "" : "s"}` : "watching desktop"
+      });
+    }
+  }
+
+  private ingestCodexSessionFile(filePath: string): number {
+    if (!existsSync(filePath)) {
+      return 0;
+    }
+
+    try {
+      const raw = readFileSync(filePath, "utf8");
+      const lines = raw.split("\n");
+      const completeLineCount = raw.endsWith("\n") ? lines.length : Math.max(0, lines.length - 1);
+      const previousCount = this.codexProcessedLineCounts.get(filePath);
+      const start = previousCount ?? Math.max(0, completeLineCount - 120);
+
+      for (let index = start; index < completeLineCount; index += 1) {
+        const line = lines[index]?.trim();
+        if (!line) {
+          continue;
+        }
+
+        this.ingestCodexSessionLine(filePath, line);
+      }
+
+      this.codexProcessedLineCounts.set(filePath, completeLineCount);
+      return this.attachedCodexSessions.has(codexConversationId(inferCodexSessionId(filePath))) ? 1 : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private ingestCodexSessionLine(filePath: string, line: string): void {
+    try {
+      const event = JSON.parse(line) as {
+        timestamp?: string;
+        type?: string;
+        payload?: Record<string, unknown>;
+      };
+      const sessionId = inferCodexSessionId(filePath);
+      if (!sessionId) {
+        return;
+      }
+
+      if (event.type === "session_meta") {
+        const payload = (event.payload ?? {}) as {
+          id?: string;
+          cwd?: string;
+          originator?: string;
+          source?: string;
+        };
+        const actualSessionId = payload.id ?? sessionId;
+        const threadTitle =
+          this.codexThreadNames.get(actualSessionId) ?? `Codex thread ${actualSessionId.slice(0, 8)}`;
+        const conversationId = codexConversationId(actualSessionId);
+
+        this.ensureConversation(conversationId, threadTitle, {
+          kind: "imported",
+          status: "background",
+          sourceId: "codex",
+          sourceLabel: "Codex",
+          externalThreadId: actualSessionId,
+          cwd: payload.cwd
+        });
+
+        if (!this.attachedCodexSessions.has(conversationId)) {
+          this.attachedCodexSessions.add(conversationId);
+          this.pushBusEvent(`Codex thread attached: ${threadTitle}`);
+          this.pushMessage({
+            id: randomUUID(),
+            conversationId,
+            conversationTitle: threadTitle,
+            sourceId: "codex",
+            sourceLabel: "Codex",
+            sourceKind: "codex",
+            role: "system",
+            title: "Codex thread attached",
+            timestamp: timestamp(),
+            blocks: [
+              {
+                type: "status-list",
+                items: [
+                  { label: "Thread", value: actualSessionId },
+                  { label: "Workspace", value: payload.cwd ?? this.workspaceRoot },
+                  { label: "Origin", value: `${payload.originator ?? "Codex"} · ${payload.source ?? "desktop"}` }
+                ]
+              }
+            ]
+          });
+        }
+        return;
+      }
+
+      const conversationId = codexConversationId(sessionId);
+      const conversation =
+        this.ensureConversation(conversationId, this.codexThreadNames.get(sessionId) ?? `Codex thread ${sessionId.slice(0, 8)}`, {
+          kind: "imported",
+          status: "background",
+          sourceId: "codex",
+          sourceLabel: "Codex",
+          externalThreadId: sessionId
+        });
+      const eventTimestamp = formatLogTimestamp(event.timestamp);
+
+      if (event.type === "response_item") {
+        this.ingestCodexResponseItem(event.payload ?? {}, conversation, eventTimestamp);
+        return;
+      }
+
+      if (event.type === "event_msg") {
+        this.ingestCodexEventMessage(event.payload ?? {}, conversation, eventTimestamp);
+      }
+    } catch {
+      // Ignore partial writes.
+    }
   }
 
   private ingestClaudeTaskFile(filePath: string): void {
@@ -726,6 +994,133 @@ export class BridgeManager extends EventEmitter<{
     this.emitSnapshot();
   }
 
+  private ingestCodexResponseItem(
+    payload: Record<string, unknown>,
+    conversation: ConversationSummary,
+    eventTimestamp: string
+  ): void {
+    const itemType = typeof payload.type === "string" ? payload.type : "";
+
+    if (itemType === "message") {
+      const role = typeof payload.role === "string" ? payload.role : "assistant";
+      if (role !== "user" && role !== "assistant") {
+        return;
+      }
+
+      const text = codexContentToText(payload.content);
+      if (!text.trim()) {
+        return;
+      }
+
+      this.pushMessage({
+        id: randomUUID(),
+        conversationId: conversation.id,
+        conversationTitle: conversation.title,
+        sourceId: "codex",
+        sourceLabel: "Codex",
+        sourceKind: "codex",
+        role,
+        title: role === "user" ? "Codex prompt" : "Codex reply",
+        timestamp: eventTimestamp,
+        blocks: textToBlocks(text)
+      });
+      this.emitSnapshot();
+      return;
+    }
+
+    if (itemType === "function_call" || itemType === "custom_tool_call") {
+      const toolName = typeof payload.name === "string" ? payload.name : "tool";
+      const input =
+        typeof payload.arguments === "string"
+          ? payload.arguments
+          : typeof payload.input === "string"
+            ? payload.input
+            : JSON.stringify(payload.input ?? payload.arguments ?? {}, null, 2);
+
+      this.pushMessage({
+        id: randomUUID(),
+        conversationId: conversation.id,
+        conversationTitle: conversation.title,
+        sourceId: "codex",
+        sourceLabel: "Codex",
+        sourceKind: "codex",
+        role: "tool",
+        title: `Codex tool: ${toolName}`,
+        timestamp: eventTimestamp,
+        blocks: [
+          {
+            type: "tool",
+            name: toolName,
+            input,
+            output: "Running...",
+            status: "running"
+          }
+        ]
+      });
+      this.emitSnapshot();
+      return;
+    }
+
+    if (itemType === "function_call_output" || itemType === "custom_tool_call_output") {
+      const output =
+        typeof payload.output === "string" ? payload.output : JSON.stringify(payload.output ?? {}, null, 2);
+
+      this.pushMessage({
+        id: randomUUID(),
+        conversationId: conversation.id,
+        conversationTitle: conversation.title,
+        sourceId: "codex",
+        sourceLabel: "Codex",
+        sourceKind: "codex",
+        role: "tool",
+        title: "Codex tool output",
+        timestamp: eventTimestamp,
+        blocks: [
+          {
+            type: "command",
+            command: "tool_result",
+            output
+          }
+        ]
+      });
+      this.emitSnapshot();
+    }
+  }
+
+  private ingestCodexEventMessage(
+    payload: Record<string, unknown>,
+    conversation: ConversationSummary,
+    eventTimestamp: string
+  ): void {
+    const eventType = typeof payload.type === "string" ? payload.type : "";
+    if (!eventType || eventType === "token_count") {
+      return;
+    }
+
+    if (eventType === "agent_message" || eventType === "user_message") {
+      return;
+    }
+
+    const detail = extractCodexEventDetail(payload);
+    if (!detail) {
+      return;
+    }
+
+    this.pushMessage({
+      id: randomUUID(),
+      conversationId: conversation.id,
+      conversationTitle: conversation.title,
+      sourceId: "codex",
+      sourceLabel: "Codex",
+      sourceKind: "codex",
+      role: "system",
+      title: titleCaseEventLabel(eventType),
+      timestamp: eventTimestamp,
+      blocks: [{ type: "markdown", text: detail }]
+    });
+    this.emitSnapshot();
+  }
+
   private async sendToClaude(prompt: string, conversation: ConversationSummary): Promise<void> {
     const command = this.sources.get("claude-code")?.command ?? "claude";
     this.pushBusEvent("Claude Code started a printed run");
@@ -838,18 +1233,26 @@ export class BridgeManager extends EventEmitter<{
     this.messages.splice(150);
   }
 
-  private ensureConversation(conversationId: string | undefined, fallbackTitle: string): ConversationSummary {
+  private ensureConversation(
+    conversationId: string | undefined,
+    fallbackTitle: string,
+    patch: Partial<ConversationSummary> = {}
+  ): ConversationSummary {
     const id = conversationId ?? "master";
     const existing = this.conversations.get(id);
     if (existing) {
-      return existing;
+      const next = { ...existing, ...patch };
+      this.conversations.set(id, next);
+      return next;
     }
 
     const summary: ConversationSummary = {
       id,
       title: fallbackTitle,
+      kind: id === "master" ? "master" : "side",
       status: id === "master" ? "master" : "active",
-      lastActivity: timestamp()
+      lastActivity: timestamp(),
+      ...patch
     };
     this.conversations.set(id, summary);
     return summary;
@@ -869,6 +1272,7 @@ export class BridgeManager extends EventEmitter<{
     this.conversations.set(id, {
       id,
       title,
+      kind: id === "master" ? "master" : "side",
       status: id === "master" ? "master" : "active",
       lastActivity: timestamp()
     });
@@ -896,13 +1300,17 @@ function safeMtime(filePath: string): number {
 }
 
 function listRecentJsonFiles(directory: string, limit: number): string[] {
+  return listRecentFilesByExtension(directory, ".json", limit);
+}
+
+function listRecentFilesByExtension(directory: string, extension: string, limit: number): string[] {
   const results: Array<{ path: string; mtime: number }> = [];
 
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const fullPath = join(directory, entry.name);
     if (entry.isDirectory()) {
       results.push(
-        ...listRecentJsonFiles(fullPath, limit * 3).map((path) => ({
+        ...listRecentFilesByExtension(fullPath, extension, limit * 3).map((path) => ({
           path,
           mtime: safeMtime(path)
         }))
@@ -910,7 +1318,7 @@ function listRecentJsonFiles(directory: string, limit: number): string[] {
       continue;
     }
 
-    if (entry.isFile() && entry.name.endsWith(".json")) {
+    if (entry.isFile() && entry.name.endsWith(extension)) {
       results.push({ path: fullPath, mtime: safeMtime(fullPath) });
     }
   }
@@ -919,6 +1327,82 @@ function listRecentJsonFiles(directory: string, limit: number): string[] {
     .sort((left, right) => right.mtime - left.mtime)
     .slice(0, limit)
     .map((item) => item.path);
+}
+
+function inferCodexSessionId(filePath: string): string | null {
+  const match = filePath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
+  return match?.[1] ?? null;
+}
+
+function codexConversationId(sessionId: string | null): string {
+  return `codex:${sessionId ?? "unknown"}`;
+}
+
+function formatLogTimestamp(value: string | undefined): string {
+  if (!value) {
+    return timestamp();
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp();
+  }
+
+  return parsed.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function codexContentToText(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") {
+        return "";
+      }
+
+      const candidate = part as { text?: unknown; type?: unknown };
+      if (typeof candidate.text === "string") {
+        return candidate.text;
+      }
+
+      if (typeof candidate.type === "string") {
+        return `[${candidate.type}]`;
+      }
+
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function extractCodexEventDetail(payload: Record<string, unknown>): string | null {
+  for (const key of ["message", "text", "title", "summary"]) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  const info = payload.info;
+  if (info && typeof info === "object") {
+    const serialized = JSON.stringify(info, null, 2);
+    return serialized === "{}" ? null : serialized;
+  }
+
+  return null;
+}
+
+function titleCaseEventLabel(value: string): string {
+  return value
+    .split(/[_\-.]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function findExecutable(candidates: string[]): string | null {
@@ -937,6 +1421,106 @@ function findExecutable(candidates: string[]): string | null {
   }
 
   return null;
+}
+
+function readGlobalPackageVersion(npmBinary: string, packageName: string): string | null {
+  try {
+    const output = execFileSync(npmBinary, ["ls", "-g", packageName, "--json", "--depth=0"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    const parsed = JSON.parse(output) as {
+      dependencies?: Record<string, { version?: string }>;
+    };
+    return parsed.dependencies?.[packageName]?.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isLaunchAgentRunning(label: string): boolean {
+  try {
+    execFileSync("launchctl", ["print", `gui/${currentUid()}/${label}`], {
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function currentUid(): number {
+  return typeof process.getuid === "function" ? process.getuid() : 501;
+}
+
+function runLaunchctl(args: string[]): void {
+  try {
+    execFileSync("launchctl", args, {
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+  } catch {
+    // Ignore bootout/start failures and let the status check surface the result.
+  }
+}
+
+function helperScriptContents(statusPath: string): string {
+  return `import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
+const statusPath = ${JSON.stringify(statusPath)};
+const claudePaths = ["${homedir()}/.claude", "${homedir()}/.claude/tasks"];
+const codexPaths = ["${homedir()}/.codex", "${homedir()}/.codex/sessions"];
+
+function writeStatus() {
+  mkdirSync(dirname(statusPath), { recursive: true });
+  writeFileSync(
+    statusPath,
+    JSON.stringify(
+      {
+        updatedAt: new Date().toISOString(),
+        pid: process.pid,
+        claudeConfigured: claudePaths.some((value) => existsSync(value)),
+        codexConfigured: codexPaths.some((value) => existsSync(value))
+      },
+      null,
+      2
+    )
+  );
+}
+
+writeStatus();
+setInterval(writeStatus, 15000);
+`;
+}
+
+function launchAgentPlistContents(config: {
+  label: string;
+  nodeBinary: string;
+  scriptPath: string;
+  logPath: string;
+}): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${config.label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${config.nodeBinary}</string>
+    <string>${config.scriptPath}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${config.logPath}</string>
+  <key>StandardErrorPath</key>
+  <string>${config.logPath}</string>
+</dict>
+</plist>
+`;
 }
 
 function timestamp(): string {

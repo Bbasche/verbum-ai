@@ -6,7 +6,7 @@ I’ve been building `Verbum`: an open-source TypeScript framework and Mac app w
 
 The app shows the whole machine talking to itself in one live graph.
 
-`npm install verbum-ai`
+`npm install https://github.com/Bbasche/verbum-ai/releases/latest/download/verbum-ai-0.1.0.tgz`
 
 Repo + demo below.
 

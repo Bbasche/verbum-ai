@@ -19,7 +19,6 @@ export default function DocsPage() {
 
       <section className="docs-hero">
         <div className="container">
-          <img alt="Verbum" className="hero-logo" src="/brand/verbum-logo-light.png" />
           <p className="hlabel">Docs</p>
           <h1>
             Build with the framework.
@@ -33,8 +32,11 @@ export default function DocsPage() {
             <a href="/download/mac" className="btnp">
               Download for macOS
             </a>
-            <a href="https://www.npmjs.com/package/verbum-ai" className="btns">
-              View npm package
+            <a
+              href="https://github.com/Bbasche/verbum-ai/releases/latest/download/verbum-ai-0.1.0.tgz"
+              className="btns"
+            >
+              Download framework tarball
             </a>
           </div>
         </div>
@@ -45,10 +47,10 @@ export default function DocsPage() {
           <article className="doc-block">
             <div className="slabel">Download</div>
             <pre className="vcode">{`# Mac app
-open https://verbum-nine.vercel.app/download/mac
+open https://verbum-ai.vercel.app/download/mac
 
-# npm package
-npm install verbum-ai`}</pre>
+# Framework package
+npm install https://github.com/Bbasche/verbum-ai/releases/latest/download/verbum-ai-0.1.0.tgz`}</pre>
           </article>
 
           <article className="doc-block">
@@ -88,8 +90,8 @@ npm run dev --workspace @verbum/mac
           <article className="doc-block">
             <div className="slabel">Notes</div>
             <p className="doc-copy">
-              The site stays static on purpose. The Mac app is the live Verbum client for Claude Code,
-              Codex, terminals, and custom sources.
+              Use the package to build with Verbum and the Mac app to run it as a desktop companion for
+              Claude Code, Codex, terminals, and custom sources.
             </p>
           </article>
         </div>
