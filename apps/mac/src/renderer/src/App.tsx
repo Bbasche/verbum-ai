@@ -93,6 +93,30 @@ function graphCategoryLabel(
   }
 }
 
+function graphNodeLabel(
+  nodeId: string,
+  source: SourceDescriptor | undefined,
+  fallbackType: SourceDescriptor["kind"] | (typeof graphNodes)[number]["type"]
+): string {
+  if (nodeId === "verbum-app") {
+    return "Control room";
+  }
+
+  if (nodeId === "shell-1") {
+    return "Repo session";
+  }
+
+  if (nodeId === "shell-2") {
+    return "Machine session";
+  }
+
+  if (nodeId === "inbox") {
+    return "Human input";
+  }
+
+  return graphCategoryLabel(source?.kind ?? fallbackType);
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("chat");
   const [selectedId, setSelectedId] = useState("verbum-app");
@@ -126,12 +150,16 @@ export function App() {
   const sourceById = new Map(sources.map((source) => [source.id, source]));
   const terminalById = new Map(terminals.map((terminal) => [terminal.id, terminal]));
   const messageCountBySource = new Map<string, number>();
+  const threadCountBySource = new Map<string, Set<string>>();
   const conversationRecencyRank = new Map<string, number>();
   const focusedNodeId = hoveredNodeId ?? selectedId;
   const needsSetup = !setupStatus?.packageInstalled || !setupStatus?.serviceInstalled || !setupStatus?.serviceRunning;
 
   allMessages.forEach((message, index) => {
     messageCountBySource.set(message.sourceId, (messageCountBySource.get(message.sourceId) ?? 0) + 1);
+    const conversationIds = threadCountBySource.get(message.sourceId) ?? new Set<string>();
+    conversationIds.add(message.conversationId);
+    threadCountBySource.set(message.sourceId, conversationIds);
     if (!conversationRecencyRank.has(message.conversationId)) {
       conversationRecencyRank.set(message.conversationId, index);
     }
@@ -186,6 +214,7 @@ export function App() {
     const source = sourceById.get(node.id);
     const terminal = terminalById.get(node.id);
     const messageCount = messageCountBySource.get(node.id) ?? 0;
+    const threadCount = threadCountBySource.get(node.id)?.size ?? 0;
     const inbound = graphEdges.filter((edge) => edge.to === node.id).length;
     const outbound = graphEdges.filter((edge) => edge.from === node.id).length;
     const connected = source
@@ -198,8 +227,9 @@ export function App() {
       source,
       connected,
       status,
-      category: graphCategoryLabel(source?.kind ?? node.type),
+      category: graphNodeLabel(node.id, source, node.type),
       messageCount,
+      threadCount,
       inbound,
       outbound
     };
@@ -780,7 +810,10 @@ export function App() {
               <article className="graph-summary-card">
                 <span>Focused node</span>
                 <strong>{focusedDescriptor.label}</strong>
-                <p>{focusedDescriptor.messageCount} messages touching it</p>
+                <p>
+                  {focusedDescriptor.messageCount} messages across{" "}
+                  {focusedDescriptor.threadCount || 1} {focusedDescriptor.threadCount === 1 ? "thread" : "threads"}
+                </p>
               </article>
               <article className="graph-summary-card">
                 <span>Visible flows</span>
@@ -798,88 +831,92 @@ export function App() {
             </div>
 
             <div className="graph-stage graph-stage-clean">
-              <div className="graph-grid" aria-hidden></div>
-              <div className="graph-orbit graph-orbit-a" aria-hidden></div>
-              <div className="graph-orbit graph-orbit-b" aria-hidden></div>
-              <div
-                className="graph-spotlight"
-                style={{
-                  left: `${focusedDescriptor.x}%`,
-                  top: `${focusedDescriptor.y}%`
-                }}
-              ></div>
-
-              <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-                {relatedFlows.map((edge, index) => {
-                  const from = graphNodes.find((node) => node.id === edge.from);
-                  const to = graphNodes.find((node) => node.id === edge.to);
-
-                  if (!from || !to || !visibleFlows.some((flow) => flow.from === edge.from && flow.to === edge.to)) {
-                    return null;
-                  }
-
-                  const dx = Math.abs(to.x - from.x);
-                  const dy = Math.abs(to.y - from.y);
-                  const tension = Math.max(dx, dy) * 0.35;
-                  const curve = `M ${from.x} ${from.y} C ${from.x + (to.x > from.x ? tension : -tension)} ${from.y}, ${to.x + (from.x > to.x ? tension : -tension)} ${to.y}, ${to.x} ${to.y}`;
-                  return (
-                    <g key={`${edge.from}-${edge.to}`}>
-                      <path
-                        className={index === pulseIndex ? "graph-path graph-path-active" : "graph-path"}
-                        d={curve}
-                      />
-                      {index === pulseIndex ? (
-                        <>
-                          <circle className="graph-packet" r="1.05">
-                            <animateMotion dur="2.4s" repeatCount="indefinite" path={curve} />
-                          </circle>
-                          <circle className="graph-packet graph-packet-delayed" r="0.85">
-                            <animateMotion
-                              begin="0.7s"
-                              dur="2.4s"
-                              repeatCount="indefinite"
-                              path={curve}
-                            />
-                          </circle>
-                        </>
-                      ) : null}
-                    </g>
-                  );
-                })}
-              </svg>
-
-              {graphDescriptors.map((node) => (
-                <button
-                  className={`graph-node graph-node-${node.type} ${
-                    node.id === selectedId ? "graph-node-active" : ""
-                  } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""} ${
-                    node.id === "verbum-app" ? "graph-node-core" : ""
-                  } ${
-                    node.type === "memory" || node.type === "human" ? "graph-node-compact" : ""
-                  }`}
-                  data-node-id={node.id}
-                  key={node.id}
-                  onClick={() => setSelectedId(node.id)}
-                  onMouseEnter={() => setHoveredNodeId(node.id)}
-                  onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
+              <div className="graph-stage-inner">
+                <div className="graph-grid" aria-hidden></div>
+                <div className="graph-orbit graph-orbit-a" aria-hidden></div>
+                <div className="graph-orbit graph-orbit-b" aria-hidden></div>
+                <div
+                  className="graph-spotlight"
                   style={{
-                    left: `${node.x}%`,
-                    top: `${node.y}%`
+                    left: `${focusedDescriptor.x}%`,
+                    top: `${focusedDescriptor.y}%`
                   }}
-                  title={`${node.label} · ${node.messageCount} messages`}
-                  type="button"
-                >
-                  <div className="graph-node-topline">
-                    <strong>{node.label}</strong>
-                    <span className={`status-dot ${node.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
-                  </div>
+                ></div>
+
+                <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+                  {relatedFlows.map((edge, index) => {
+                    const from = graphNodes.find((node) => node.id === edge.from);
+                    const to = graphNodes.find((node) => node.id === edge.to);
+
+                    if (!from || !to || !visibleFlows.some((flow) => flow.from === edge.from && flow.to === edge.to)) {
+                      return null;
+                    }
+
+                    const dx = Math.abs(to.x - from.x);
+                    const dy = Math.abs(to.y - from.y);
+                    const tension = Math.max(dx, dy) * 0.35;
+                    const curve = `M ${from.x} ${from.y} C ${from.x + (to.x > from.x ? tension : -tension)} ${from.y}, ${to.x + (from.x > to.x ? tension : -tension)} ${to.y}, ${to.x} ${to.y}`;
+                    return (
+                      <g key={`${edge.from}-${edge.to}`}>
+                        <path
+                          className={index === pulseIndex ? "graph-path graph-path-active" : "graph-path"}
+                          d={curve}
+                        />
+                        {index === pulseIndex ? (
+                          <>
+                            <circle className="graph-packet" r="1.05">
+                              <animateMotion dur="2.4s" repeatCount="indefinite" path={curve} />
+                            </circle>
+                            <circle className="graph-packet graph-packet-delayed" r="0.85">
+                              <animateMotion
+                                begin="0.7s"
+                                dur="2.4s"
+                                repeatCount="indefinite"
+                                path={curve}
+                              />
+                            </circle>
+                          </>
+                        ) : null}
+                      </g>
+                    );
+                  })}
+                </svg>
+
+                {graphDescriptors.map((node) => (
+                  <button
+                    className={`graph-node graph-node-${node.type} ${
+                      node.id === selectedId ? "graph-node-active" : ""
+                    } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""} ${
+                      node.id === "verbum-app" ? "graph-node-core" : ""
+                    } ${
+                      node.type === "memory" || node.type === "human" ? "graph-node-compact" : ""
+                    }`}
+                    data-node-id={node.id}
+                    key={node.id}
+                    onClick={() => setSelectedId(node.id)}
+                    onMouseEnter={() => setHoveredNodeId(node.id)}
+                    onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
+                    style={{
+                      left: `${node.x}%`,
+                      top: `${node.y}%`
+                    }}
+                    title={`${node.label} · ${node.messageCount} messages`}
+                    type="button"
+                  >
+                    <div className="graph-node-topline">
+                      <strong>{node.label}</strong>
+                      <span className={`status-dot ${node.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
+                    </div>
                   <span className="graph-node-kind">{node.category}</span>
                   <div className="graph-node-stats">
                     <b>{node.messageCount}</b>
-                    <span>{node.status}</span>
+                    <span>
+                      {node.threadCount || 1} {node.threadCount === 1 ? "thread" : "threads"}
+                    </span>
                   </div>
                 </button>
               ))}
+              </div>
             </div>
           </section>
 
@@ -900,6 +937,10 @@ export function App() {
                 <strong>
                   {focusedDescriptor.inbound} in / {focusedDescriptor.outbound} out
                 </strong>
+              </div>
+              <div>
+                <span>Threads</span>
+                <strong>{focusedDescriptor.threadCount || 1}</strong>
               </div>
               <div>
                 <span>Category</span>

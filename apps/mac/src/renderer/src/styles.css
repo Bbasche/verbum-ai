@@ -1053,6 +1053,11 @@ button {
     linear-gradient(180deg, #0f0907, #0a0706);
 }
 
+.graph-stage-inner {
+  position: absolute;
+  inset: 6% 11%;
+}
+
 .graph-grid,
 .graph-orbit,
 .graph-svg {
@@ -1396,6 +1401,10 @@ button {
   .graph-stage {
     min-height: 620px;
   }
+
+  .graph-stage-inner {
+    inset: 5% 7%;
+  }
 }
 
 @media (max-width: 780px) {
@@ -1422,5 +1431,9 @@ button {
 
   .graph-stage {
     min-height: 680px;
+  }
+
+  .graph-stage-inner {
+    inset: 4% 4%;
   }
 }

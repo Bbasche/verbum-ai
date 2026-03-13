@@ -13,8 +13,8 @@ export const graphNodes = [
     id: "claude-code",
     label: "Claude Code",
     type: "model",
-    x: 24,
-    y: 24,
+    x: 29,
+    y: 25,
     z: 18,
     detail: "Observed through the SDK or session files with tool calls rendered as child edges."
   },
@@ -22,8 +22,8 @@ export const graphNodes = [
     id: "codex",
     label: "Codex",
     type: "model",
-    x: 76,
-    y: 24,
+    x: 71,
+    y: 25,
     z: 24,
     detail: "Managed subprocess mode for search, shell work, and final synthesis."
   },
@@ -31,8 +31,8 @@ export const graphNodes = [
     id: "shell-1",
     label: "zsh · repo",
     type: "terminal",
-    x: 26,
-    y: 76,
+    x: 31,
+    y: 72,
     z: 14,
     detail: "Local shell state persists across commands so repo work reads like a conversation."
   },
@@ -40,8 +40,8 @@ export const graphNodes = [
     id: "shell-2",
     label: "zsh · machine",
     type: "terminal",
-    x: 74,
-    y: 76,
+    x: 69,
+    y: 72,
     z: 10,
     detail: "Second terminal proves Verbum is orchestrating the machine, not a single pane."
   },
@@ -50,7 +50,7 @@ export const graphNodes = [
     label: "Search",
     type: "memory",
     x: 50,
-    y: 12,
+    y: 18,
     z: 16,
     detail: "Fast local conversational retrieval over docs, notes, and live session traces."
   },
@@ -59,7 +59,7 @@ export const graphNodes = [
     label: "Inbox",
     type: "human",
     x: 50,
-    y: 88,
+    y: 80,
     z: 12,
     detail: "Every human interrupt lands here with actor routing preserved."
   },
@@ -67,7 +67,7 @@ export const graphNodes = [
     id: "custom-source",
     label: "Custom Source",
     type: "custom",
-    x: 13,
+    x: 21,
     y: 50,
     z: 10,
     detail: "Your own typed message adapter can appear in the same graph and thread."
