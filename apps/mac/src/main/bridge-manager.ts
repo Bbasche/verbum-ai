@@ -66,6 +66,7 @@ export class BridgeManager extends EventEmitter<{
   private readonly busEvents: string[] = [];
   private readonly terminals = new Map<string, TerminalSession>();
   private readonly processedClaudeFiles = new Set<string>();
+  private readonly attachedClaudeThreads = new Set<string>();
   private readonly codexThreadNames = new Map<string, string>();
   private readonly codexProcessedLineCounts = new Map<string, number>();
   private readonly attachedCodexSessions = new Set<string>();
@@ -515,8 +516,16 @@ export class BridgeManager extends EventEmitter<{
       return;
     }
 
-    for (const file of listRecentJsonFiles(this.claudeTasksDir, 8)) {
-      this.ingestClaudeTaskFile(file);
+    let importedCount = 0;
+    for (const file of listRecentJsonFiles(this.claudeTasksDir, 24)) {
+      importedCount += this.ingestClaudeTaskFile(file);
+    }
+
+    if (importedCount > 0) {
+      this.updateSource("claude-code", {
+        connected: true,
+        status: `watching ${importedCount} thread${importedCount === 1 ? "" : "s"}`
+      });
     }
 
     watch(
@@ -527,7 +536,13 @@ export class BridgeManager extends EventEmitter<{
           return;
         }
 
-        this.ingestClaudeTaskFile(join(this.claudeTasksDir, filename));
+        const imported = this.ingestClaudeTaskFile(join(this.claudeTasksDir, filename));
+        if (imported > 0) {
+          this.updateSource("claude-code", {
+            connected: true,
+            status: `watching ${this.attachedClaudeThreads.size} thread${this.attachedClaudeThreads.size === 1 ? "" : "s"}`
+          });
+        }
       }
     );
   }
@@ -703,23 +718,62 @@ export class BridgeManager extends EventEmitter<{
     }
   }
 
-  private ingestClaudeTaskFile(filePath: string): void {
+  private ingestClaudeTaskFile(filePath: string): number {
     if (!filePath.endsWith(".json") || !existsSync(filePath)) {
-      return;
+      return 0;
     }
 
     const fileKey = `${filePath}:${safeMtime(filePath)}`;
     if (this.processedClaudeFiles.has(fileKey)) {
-      return;
+      return 0;
     }
 
     try {
       const task = JSON.parse(readFileSync(filePath, "utf8")) as ClaudeTaskFile;
       this.processedClaudeFiles.add(fileKey);
+      const threadId = inferClaudeThreadId(filePath);
+      const conversationId = claudeConversationId(threadId);
+      const conversationTitle =
+        task.subject?.trim() ||
+        task.activeForm?.trim() ||
+        (threadId ? `Claude thread ${threadId.slice(0, 8)}` : "Claude Code");
+      const conversation = this.ensureConversation(conversationId, conversationTitle, {
+        kind: "imported",
+        status: "background",
+        sourceId: "claude-code",
+        sourceLabel: "Claude Code",
+        externalThreadId: threadId ?? undefined
+      });
+
+      if (threadId && !this.attachedClaudeThreads.has(conversationId)) {
+        this.attachedClaudeThreads.add(conversationId);
+        this.pushBusEvent(`Claude thread attached: ${conversation.title}`);
+        this.pushMessage({
+          id: randomUUID(),
+          conversationId: conversation.id,
+          conversationTitle: conversation.title,
+          sourceId: "claude-code",
+          sourceLabel: "Claude Code",
+          sourceKind: "claude-code",
+          role: "system",
+          title: "Claude thread attached",
+          timestamp: timestamp(),
+          blocks: [
+            {
+              type: "status-list",
+              items: [
+                { label: "Thread", value: threadId },
+                { label: "Source", value: "Claude task watcher" }
+              ]
+            }
+          ]
+        });
+      }
+
       this.pushMessage({
         id: randomUUID(),
-        conversationId: "master",
-        conversationTitle: "Master conversation",
+        conversationId: conversation.id,
+        conversationTitle: conversation.title,
         sourceId: "claude-code",
         sourceLabel: "Claude Code",
         sourceKind: "claude-code",
@@ -742,8 +796,10 @@ export class BridgeManager extends EventEmitter<{
       });
       this.pushBusEvent(`Claude task updated: ${task.subject ?? task.id ?? "task"}`);
       this.emitSnapshot();
+      return this.attachedClaudeThreads.has(conversationId) ? 1 : 0;
     } catch {
       // Ignore partial writes or non-task files.
+      return 0;
     }
   }
 
@@ -1331,6 +1387,15 @@ function listRecentFilesByExtension(directory: string, extension: string, limit:
 function inferCodexSessionId(filePath: string): string | null {
   const match = filePath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
   return match?.[1] ?? null;
+}
+
+function inferClaudeThreadId(filePath: string): string | null {
+  const match = filePath.match(/\/tasks\/([0-9a-f-]{36})\//i);
+  return match?.[1] ?? null;
+}
+
+function claudeConversationId(threadId: string | null): string {
+  return `claude:${threadId ?? "unknown"}`;
 }
 
 function codexConversationId(sessionId: string | null): string {
