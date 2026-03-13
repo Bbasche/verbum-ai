@@ -7,4 +7,4 @@ coverage
 *.tsbuildinfo
 apps/web/.next
 packages/verbum/dist
-
+apps/mac/out
