@@ -3,8 +3,8 @@ export const graphNodes = [
     id: "verbum-app",
     label: "Verbum App",
     type: "router",
-    x: 52,
-    y: 46,
+    x: 50,
+    y: 48,
     z: 40,
     detail:
       "The observatory. It watches streams, powers search, and keeps the whole machine legible."
@@ -13,8 +13,8 @@ export const graphNodes = [
     id: "claude-code",
     label: "Claude Code",
     type: "model",
-    x: 23,
-    y: 22,
+    x: 24,
+    y: 24,
     z: 18,
     detail: "Observed through the SDK or session files with tool calls rendered as child edges."
   },
@@ -22,8 +22,8 @@ export const graphNodes = [
     id: "codex",
     label: "Codex",
     type: "model",
-    x: 79,
-    y: 28,
+    x: 76,
+    y: 24,
     z: 24,
     detail: "Managed subprocess mode for search, shell work, and final synthesis."
   },
@@ -31,17 +31,17 @@ export const graphNodes = [
     id: "shell-1",
     label: "zsh · repo",
     type: "terminal",
-    x: 18,
-    y: 70,
+    x: 26,
+    y: 76,
     z: 14,
     detail: "Local shell state persists across commands so repo work reads like a conversation."
   },
   {
     id: "shell-2",
-    label: "python · data",
+    label: "zsh · machine",
     type: "terminal",
-    x: 75,
-    y: 73,
+    x: 74,
+    y: 76,
     z: 10,
     detail: "Second terminal proves Verbum is orchestrating the machine, not a single pane."
   },
@@ -49,8 +49,8 @@ export const graphNodes = [
     id: "search",
     label: "Search",
     type: "memory",
-    x: 51,
-    y: 15,
+    x: 50,
+    y: 12,
     z: 16,
     detail: "Fast local conversational retrieval over docs, notes, and live session traces."
   },
@@ -58,8 +58,8 @@ export const graphNodes = [
     id: "inbox",
     label: "Inbox",
     type: "human",
-    x: 47,
-    y: 84,
+    x: 50,
+    y: 88,
     z: 12,
     detail: "Every human interrupt lands here with actor routing preserved."
   },
@@ -67,8 +67,8 @@ export const graphNodes = [
     id: "custom-source",
     label: "Custom Source",
     type: "custom",
-    x: 86,
-    y: 54,
+    x: 13,
+    y: 50,
     z: 10,
     detail: "Your own typed message adapter can appear in the same graph and thread."
   }

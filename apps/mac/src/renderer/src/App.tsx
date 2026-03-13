@@ -9,12 +9,26 @@ import {
 import { graphEdges, graphNodes, searchDocuments } from "./demo-data";
 import { MessageRenderer } from "./MessageRenderer";
 import type { BridgeSnapshot, ConversationSummary, SetupStatus, SourceDescriptor } from "./message-schema";
-import verbumLogoDark from "./assets/verbum-logo-dark.png";
 import verbumMacIcon from "./assets/verbum-mac-icon-1024.png";
 
 type SearchCitation = (typeof searchDocuments)[number];
 type AppTab = "chat" | "feed" | "graph";
 type GraphFocus = "all" | "selected" | "live";
+
+const tabCopy: Record<AppTab, { title: string; description: string }> = {
+  chat: {
+    title: "Master conversation first.",
+    description: "Keep the working thread clean, route to the right source, and inspect machine context only when you need it."
+  },
+  feed: {
+    title: "A global feed for the whole machine.",
+    description: "Watch bus activity, tool work, terminal output, and agent replies move through one live stream."
+  },
+  graph: {
+    title: "A systems map that earns its screen space.",
+    description: "Shrink the nodes, keep the signal, and let the inspector carry the detail instead of stuffing it into the canvas."
+  }
+};
 
 function scoreDocument(query: string, document: SearchCitation): number {
   const terms = query.toLowerCase().split(/\W+/).filter(Boolean);
@@ -214,6 +228,7 @@ export function App() {
     .map((document) => ({ document, score: scoreDocument(deferredQuery, document) }))
     .sort((left, right) => right.score - left.score)
     .slice(0, 4);
+  const activeTabCopy = tabCopy[activeTab];
 
   const tickerItems = [
     ...busEvents.slice(-8).map((event) => ({
@@ -286,11 +301,19 @@ export function App() {
         <div className="title-stack">
           <div className="brand-bar">
             <img alt="Verbum icon" className="brand-mark" src={verbumMacIcon} />
-            <img alt="Verbum" className="brand-wordmark" src={verbumLogoDark} />
+            <div className="brand-copy">
+              <strong>Verbum</strong>
+              <span>Operator view</span>
+            </div>
           </div>
-          <span className="eyebrow">Verbum App</span>
-          <h1>Three first-class views for one machine.</h1>
-          <p>Chat for the working thread, Feed for everything moving, Graph for the system map.</p>
+          <span className="eyebrow">Mac App</span>
+          <h1>{activeTabCopy.title}</h1>
+          <p>{activeTabCopy.description}</p>
+          <div className="header-chips">
+            <span className="header-chip">{selectedConversation?.title ?? "Master conversation"}</span>
+            <span className="header-chip">Route {selectedSource.name}</span>
+            <span className="header-chip">Active {activeEdge.label}</span>
+          </div>
         </div>
         <div className="topbar-metrics">
           <article className="metric-card">
@@ -346,7 +369,7 @@ export function App() {
                 }}
                 type="button"
               >
-                New
+                New thread
               </button>
             </div>
 
@@ -558,9 +581,15 @@ export function App() {
             </div>
 
             <div className="message-feed">
-              {threadMessages.map((message) => (
-                <MessageRenderer key={message.id} message={message} />
-              ))}
+              {threadMessages.length > 0 ? (
+                threadMessages.map((message) => <MessageRenderer key={message.id} message={message} />)
+              ) : (
+                <article className="empty-state">
+                  <span className="eyebrow">Quiet thread</span>
+                  <h3>Nothing in this thread yet.</h3>
+                  <p>Route a prompt to Claude, Codex, or a terminal to start the conversation.</p>
+                </article>
+              )}
             </div>
           </section>
 
@@ -764,8 +793,6 @@ export function App() {
                     return null;
                   }
 
-                  const mx = (from.x + to.x) / 2;
-                  const my = (from.y + to.y) / 2;
                   const dx = Math.abs(to.x - from.x);
                   const dy = Math.abs(to.y - from.y);
                   const tension = Math.max(dx, dy) * 0.35;
@@ -800,7 +827,12 @@ export function App() {
                 <button
                   className={`graph-node graph-node-${node.type} ${
                     node.id === selectedId ? "graph-node-active" : ""
-                  } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""}`}
+                  } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""} ${
+                    node.id === "verbum-app" ? "graph-node-core" : ""
+                  } ${
+                    node.type === "memory" || node.type === "human" ? "graph-node-compact" : ""
+                  }`}
+                  data-node-id={node.id}
                   key={node.id}
                   onClick={() => setSelectedId(node.id)}
                   onMouseEnter={() => setHoveredNodeId(node.id)}
@@ -809,6 +841,7 @@ export function App() {
                     left: `${node.x}%`,
                     top: `${node.y}%`
                   }}
+                  title={`${node.label} · ${node.messageCount} messages`}
                   type="button"
                 >
                   <div className="graph-node-topline">
@@ -867,6 +900,24 @@ export function App() {
                 </button>
               ))}
             </div>
+
+            {selectedNodeMessages.length > 0 ? (
+              <div className="node-activity">
+                <div className="panel-head">
+                  <span className="eyebrow">Recent Activity</span>
+                  <p>Latest messages touching {selectedDescriptor.label}.</p>
+                </div>
+                <div className="node-activity-list">
+                  {selectedNodeMessages.map((message) => (
+                    <article className="node-activity-item" key={message.id}>
+                      <strong>{message.title}</strong>
+                      <span>{message.timestamp}</span>
+                      <p>{message.blocks[0]?.type === "markdown" ? message.blocks[0].text : message.sourceLabel}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <form
               className="search-form"
