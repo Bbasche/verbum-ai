@@ -15,7 +15,7 @@ The Mac app is the live client:
 ## Install
 
 ```bash
-git clone https://github.com/Bbasche/verbum.git
+git clone https://github.com/Bbasche/verbum-ai.git
 cd verbum
 npm install
 ```
@@ -64,4 +64,3 @@ Example:
 - Claude and Codex show as connected if their CLIs are installed
 - Claude task file updates appear automatically if `~/.claude/tasks` exists
 - Terminal sessions for the repo and the machine are ready for demo commands
-

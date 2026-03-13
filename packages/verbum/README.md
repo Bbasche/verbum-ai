@@ -2,12 +2,12 @@
 
 Everything is a conversation.
 
-`@basche42/verbum` is a TypeScript framework for building agentic systems around messages instead of ad-hoc tool glue. Actors receive messages, return messages, and the Router records the whole conversation graph.
+`verbum-ai` is a TypeScript framework for building agentic systems around messages instead of ad-hoc tool glue. Actors receive messages, return messages, and the Router records the whole conversation graph.
 
 ## Install
 
 ```bash
-npm install @basche42/verbum
+npm install verbum-ai
 ```
 
 ## Quick start
@@ -19,7 +19,7 @@ import {
   ProcessActor,
   Router,
   scriptedModel
-} from "@basche42/verbum";
+} from "verbum-ai";
 
 const router = new Router({ maxDepth: 8 });
 

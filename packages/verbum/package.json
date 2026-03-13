@@ -1,5 +1,5 @@
 {
-  "name": "@basche42/verbum",
+  "name": "verbum-ai",
   "version": "0.1.0",
   "description": "Everything is a conversation. A TypeScript framework for routing messages between models, terminals, tools, memory, and humans.",
   "license": "MIT",
@@ -10,10 +10,10 @@
   "homepage": "https://verbum-nine.vercel.app",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Bbasche/verbum.git"
+    "url": "git+https://github.com/Bbasche/verbum-ai.git"
   },
   "bugs": {
-    "url": "https://github.com/Bbasche/verbum/issues"
+    "url": "https://github.com/Bbasche/verbum-ai/issues"
   },
   "publishConfig": {
     "access": "public"

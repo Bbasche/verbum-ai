@@ -8,15 +8,15 @@ Verbum is an open-source TypeScript framework and native macOS app for orchestra
 
 - Site: [verbum-nine.vercel.app](https://verbum-nine.vercel.app)
 - Docs: [verbum-nine.vercel.app/docs](https://verbum-nine.vercel.app/docs)
-- npm: [npmjs.com/package/@basche42/verbum](https://www.npmjs.com/package/@basche42/verbum)
-- Mac app DMG: [github.com/Bbasche/verbum/releases/latest/download/Verbum.dmg](https://github.com/Bbasche/verbum/releases/latest/download/Verbum.dmg)
-- Mac app setup: [github.com/Bbasche/verbum/blob/main/docs/mac-app-setup.md](https://github.com/Bbasche/verbum/blob/main/docs/mac-app-setup.md)
-- Package docs: [github.com/Bbasche/verbum/blob/main/packages/verbum/README.md](https://github.com/Bbasche/verbum/blob/main/packages/verbum/README.md)
+- npm: [npmjs.com/package/verbum-ai](https://www.npmjs.com/package/verbum-ai)
+- Mac app DMG: [github.com/Bbasche/verbum-ai/releases/latest/download/Verbum.dmg](https://github.com/Bbasche/verbum-ai/releases/latest/download/Verbum.dmg)
+- Mac app setup: [github.com/Bbasche/verbum-ai/blob/main/docs/mac-app-setup.md](https://github.com/Bbasche/verbum-ai/blob/main/docs/mac-app-setup.md)
+- Package docs: [github.com/Bbasche/verbum-ai/blob/main/packages/verbum/README.md](https://github.com/Bbasche/verbum-ai/blob/main/packages/verbum/README.md)
 
 ## Install The Framework
 
 ```bash
-npm install @basche42/verbum
+npm install verbum-ai
 ```
 
 ```ts
@@ -26,7 +26,7 @@ import {
   ProcessActor,
   Router,
   scriptedModel
-} from "@basche42/verbum";
+} from "verbum-ai";
 
 const router = new Router({ maxDepth: 8 });
 
@@ -57,7 +57,7 @@ router.register(new MemoryActor({ id: "memory" }));
 ## Run The Mac App
 
 ```bash
-git clone https://github.com/Bbasche/verbum.git
+git clone https://github.com/Bbasche/verbum-ai.git
 cd verbum
 npm install
 npm run dev --workspace @verbum/mac

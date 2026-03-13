@@ -2,7 +2,7 @@
 
 ## Product
 
-- Ship the core `@basche42/verbum` package
+- Ship the core `verbum-ai` package
 - Ship the static docs/marketing site
 - Ship the native macOS app
 - Keep collaboration and P2P clearly marked as roadmap
@@ -35,6 +35,6 @@
 ## Launch
 
 - Post the announcement clip on X
-- Immediately reply with the repo link, docs link, and `npm install @basche42/verbum`
+- Immediately reply with the repo link, docs link, and `npm install verbum-ai`
 - Submit Show HN with the same clip and a short honest explanation
 - Stay online for the first two hours and answer comments fast

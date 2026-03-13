@@ -13,7 +13,7 @@ export default function HomePage() {
             <a href="#actors">Actors</a>
             <a href="#app">Mac App</a>
             <Link href="/docs">Docs</Link>
-            <a href="https://github.com/Bbasche/verbum" className="ncta">
+            <a href="https://github.com/Bbasche/verbum-ai" className="ncta">
               GitHub →
             </a>
           </nav>
@@ -39,7 +39,7 @@ export default function HomePage() {
             <Link href="/docs" className="btnp">
               Get started →
             </Link>
-            <a href="https://github.com/Bbasche/verbum" className="btns">
+            <a href="https://github.com/Bbasche/verbum-ai" className="btns">
               Star on GitHub
             </a>
           </div>
@@ -48,7 +48,7 @@ export default function HomePage() {
           <div className="wide">
             <div className="icmd">
               <span className="p">$</span>
-              <span className="c">npm install @basche42/verbum</span>
+              <span className="c">npm install verbum-ai</span>
             </div>
             <div className="ibadges">
               <span className="badge g">MIT</span>
@@ -193,7 +193,7 @@ export default function HomePage() {
               <span className="ctitle">agent.ts</span>
               <span></span>
             </div>
-            <pre className="vcode">{`import { Router, ModelActor, ProcessActor, MemoryActor, scriptedModel } from "@basche42/verbum"
+            <pre className="vcode">{`import { Router, ModelActor, ProcessActor, MemoryActor, scriptedModel } from "verbum-ai"
 
 const router = new Router()
 
@@ -328,7 +328,7 @@ router.register(new MemoryActor({ id: "memory" }))`}</pre>
             <Link href="/docs" className="btnp">
               Read the docs
             </Link>
-            <a href="https://github.com/Bbasche/verbum" className="btns">
+            <a href="https://github.com/Bbasche/verbum-ai" className="btns">
               Open GitHub
             </a>
           </div>
@@ -342,7 +342,7 @@ router.register(new MemoryActor({ id: "memory" }))`}</pre>
           </div>
           <div className="flinks">
             <Link href="/docs">Docs</Link>
-            <a href="https://github.com/Bbasche/verbum">GitHub</a>
+            <a href="https://github.com/Bbasche/verbum-ai">GitHub</a>
           </div>
           <div className="fmit">MIT licensed · built in public</div>
         </div>

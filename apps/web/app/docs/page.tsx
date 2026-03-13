@@ -10,7 +10,7 @@ export default function DocsPage() {
           </Link>
           <nav>
             <Link href="/">Home</Link>
-            <a href="https://github.com/Bbasche/verbum" className="ncta">
+            <a href="https://github.com/Bbasche/verbum-ai" className="ncta">
               GitHub →
             </a>
           </nav>
@@ -32,7 +32,7 @@ export default function DocsPage() {
             <a href="/download/mac" className="btnp">
               Download for macOS
             </a>
-            <a href="https://www.npmjs.com/package/@basche42/verbum" className="btns">
+            <a href="https://www.npmjs.com/package/verbum-ai" className="btns">
               View npm package
             </a>
           </div>
@@ -47,12 +47,12 @@ export default function DocsPage() {
 open https://verbum-nine.vercel.app/download/mac
 
 # npm package
-npm install @basche42/verbum`}</pre>
+npm install verbum-ai`}</pre>
           </article>
 
           <article className="doc-block">
             <div className="slabel">Install</div>
-            <pre className="vcode">{`git clone https://github.com/Bbasche/verbum.git
+            <pre className="vcode">{`git clone https://github.com/Bbasche/verbum-ai.git
 cd verbum
 npm install
 
