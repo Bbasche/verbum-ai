@@ -12,7 +12,15 @@ Make the audience feel one idea viscerally: Claude Code, Codex, your terminals, 
 - A third terminal for a plain shell task
 - Repo already open with one small failing test and one obvious fix path
 
-## The 60-second cut
+## The 2-minute cut
+
+### Before you hit record
+
+- open the Mac app and make sure `Master conversation` is visible
+- have Claude Code already authenticated locally
+- have Codex already authenticated locally
+- keep the repo at a clean point where `npm test --workspace verbum` is green
+- if possible, leave one recent Claude task in `~/.claude/tasks` so the watcher has something to show
 
 ### 1. Open with the punchline
 
@@ -23,33 +31,34 @@ Say:
 Visual:
 
 - Start on the native app graph
-- Claude Code, Codex, `zsh`, `python`, Search, and Inbox are already visible as nodes
+- Claude Code, Codex, `zsh`, machine shell, Search, and Inbox are already visible as nodes
 - The message bus is moving before you touch anything
 
 ### 2. Give the task
 
 In the app inbox, send:
 
-> "Fix the failing router test, but have Codex explain the root cause before Claude patches anything."
+> "Explain why Verbum is easier to debug than ad-hoc tool glue, then give me one launch-ready TypeScript snippet."
 
 Visual:
 
 - The Inbox node lights up
 - A new edge fires to Verbum App
-- Verbum App fans the request out to Claude Code and Codex
+- Verbum App fans the request out to Claude Code or Codex depending on route
 
 ### 3. Show orchestration, not chat
 
 Say:
 
-> "Claude is editing. Codex is verifying. The shell is running the suite. And I can see all of it."
+> "Claude is answering. Codex is answering. The shell is running the suite. And I can see all of it in one place."
 
 Visual:
 
-- Codex explains the failure in one pane
-- Claude Code starts a patch
-- `zsh` runs `npm test`
-- Search returns a citation from a previous run or doc note
+- Run the app's `Run 2-minute demo` button
+- Codex returns a structured answer in the message feed
+- Claude Code returns a launch-ready explanation with a code block
+- `zsh · repo` runs `npm test --workspace verbum`
+- `zsh · machine` shows a few `~/.claude/tasks` files so the companion story feels real
 
 ### 4. Land the search moment
 
@@ -69,7 +78,7 @@ Say:
 
 Say:
 
-> "This is Verbum. Everything is a conversation."
+> "This is Verbum. The website tells the story. The Mac app runs the story."
 
 Visual:
 
@@ -86,8 +95,17 @@ Visual:
 
 ## Strong demo tasks
 
-- Fix one failing test while citing the cause before patching
-- Ask Claude Code to implement while Codex reviews
-- Run the build in one shell and snapshot assets in another
-- Save the pattern to memory and retrieve it with search
+- Ask Codex for a sharp three-bullet architectural explanation
+- Ask Claude Code for a launch-ready explanation plus one code block
+- Run `npm test --workspace verbum` in the repo shell
+- Run `find ~/.claude/tasks -maxdepth 2 -type f | head -n 6` in the machine shell
+- Run `find packages/verbum/src -maxdepth 2 -type f | sort` to show the code surface quickly
+- If you want one extra flex: start a custom JSONL source and let it appear in the same feed
 
+## Best terminal moments
+
+- `npm test --workspace verbum`
+- `find packages/verbum/src -maxdepth 2 -type f | sort`
+- `find ~/.claude/tasks -maxdepth 2 -type f | head -n 6`
+- `git status --short`
+- `npm run build --workspace @verbum/mac`

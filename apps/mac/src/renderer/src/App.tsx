@@ -7,19 +7,14 @@ import {
 } from "react";
 
 import {
-  busEvents,
   graphEdges,
   graphNodes,
   inboxThread,
-  messageFeed,
   onboardingSteps,
-  searchDocuments,
-  sessions,
-  sourceDescriptors,
-  terminalSnapshots
+  searchDocuments
 } from "./demo-data";
 import { MessageRenderer } from "./MessageRenderer";
-import type { AppMessage, SourceDescriptor } from "./message-schema";
+import type { BridgeSnapshot, ConversationSummary, SourceDescriptor } from "./message-schema";
 
 type SearchCitation = (typeof searchDocuments)[number];
 
@@ -53,24 +48,43 @@ function answerQuery(query: string): { summary: string; citations: SearchCitatio
 
 export function App() {
   const [selectedId, setSelectedId] = useState("verbum-app");
+  const [selectedConversationId, setSelectedConversationId] = useState("master");
   const [query, setQuery] = useState("How does the app orchestrate Claude Code, Codex, and terminals?");
   const [pulseIndex, setPulseIndex] = useState(0);
   const [routeTo, setRouteTo] = useState("claude-code");
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
   );
+  const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
   const [searchTurns, setSearchTurns] = useState<
     Array<{ role: "assistant" | "user"; content: string; citations?: SearchCitation[] }>
   >(() => {
     const answer = answerQuery("How does the app orchestrate Claude Code, Codex, and terminals?");
     return [{ role: "assistant", content: answer.summary, citations: answer.citations }];
   });
-  const [feed, setFeed] = useState<AppMessage[]>([...messageFeed]);
 
   const deferredQuery = useDeferredValue(query);
+  const sources = snapshot?.sources ?? [];
+  const conversations = snapshot?.conversations ?? [];
+  const feed = (snapshot?.messages ?? []).filter(
+    (message) => message.conversationId === selectedConversationId
+  );
+  const busEvents = snapshot?.busEvents ?? ["Verbum App is booting…"];
+  const terminals = snapshot?.terminals ?? [];
+  const demoCommands = snapshot?.demoCommands ?? [];
   const selectedNode = graphNodes.find((node) => node.id === selectedId) ?? graphNodes[0];
   const selectedSource =
-    sourceDescriptors.find((descriptor) => descriptor.id === selectedId) ?? sourceDescriptors[0];
+    sources.find((descriptor) => descriptor.id === selectedId) ??
+    sources[0] ?? {
+      id: "verbum-app",
+      name: "Verbum App",
+      kind: "custom",
+      subtitle: "Unified desktop control room",
+      mode: "replacement",
+      connected: true,
+      typing: "graph, inbox, search, typed source registry",
+      status: "starting"
+    };
   const liveMatches = [...searchDocuments]
     .map((document) => ({ document, score: scoreDocument(deferredQuery, document) }))
     .sort((left, right) => right.score - left.score)
@@ -85,6 +99,39 @@ export function App() {
     return () => window.clearInterval(interval);
   }, [tickPulse]);
 
+  useEffect(() => {
+    let unsubscribe = () => {};
+
+    void window.verbumApp.getSnapshot().then((nextSnapshot) => {
+      setSnapshot(nextSnapshot);
+    });
+
+    unsubscribe = window.verbumApp.subscribe((nextSnapshot) => {
+      setSnapshot(nextSnapshot);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+
+    if (!snapshot.sources.some((source) => source.id === routeTo)) {
+      const preferredRoute =
+        snapshot.sources.find((source) => source.id === "claude-code" || source.id === "codex")?.id ??
+        snapshot.sources[0]?.id;
+      if (preferredRoute) {
+        setRouteTo(preferredRoute);
+      }
+    }
+
+    if (!snapshot.conversations.some((conversation) => conversation.id === selectedConversationId)) {
+      setSelectedConversationId(snapshot.conversations[0]?.id ?? "master");
+    }
+  }, [routeTo, selectedConversationId, snapshot]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -94,8 +141,10 @@ export function App() {
         </div>
         <div className="topbar-metrics">
           <span>macOS desktop app</span>
-          <span>{sessions.length} live sessions</span>
-          <span>19 edges/min</span>
+          <span>{sources.length} sources</span>
+          <span>{conversations.length} conversations</span>
+          <span>{sources.filter((source) => source.connected).length} connected</span>
+          <span>{snapshot?.workspaceRoot ?? "loading workspace"}</span>
         </div>
       </header>
 
@@ -120,12 +169,45 @@ export function App() {
               <li key={step}>{step}</li>
             ))}
           </ol>
+          <div className="panel-head panel-head-inline">
+            <div>
+              <span className="eyebrow">Conversations</span>
+              <p>Your main thread with Verbum is the master conversation. Spawn others when needed.</p>
+            </div>
+            <button
+              className="chip"
+              onClick={() => {
+                void window.verbumApp
+                  .spawnConversation({ title: `Side thread ${conversations.length}` })
+                  .then((conversation) => setSelectedConversationId(conversation.id));
+              }}
+              type="button"
+            >
+              New thread
+            </button>
+          </div>
+          <div className="conversation-list">
+            {conversations.map((conversation: ConversationSummary) => (
+              <button
+                className={`session-card ${
+                  conversation.id === selectedConversationId ? "session-card-active" : ""
+                }`}
+                key={conversation.id}
+                onClick={() => setSelectedConversationId(conversation.id)}
+                type="button"
+              >
+                <strong>{conversation.title}</strong>
+                <span>{conversation.status}</span>
+                <p>Last activity {conversation.lastActivity}</p>
+              </button>
+            ))}
+          </div>
           <div className="panel-head">
             <span className="eyebrow">Sources</span>
             <p>Companion app today, replacement interface when you want it.</p>
           </div>
           <div className="session-list">
-            {sourceDescriptors.map((source: SourceDescriptor) => (
+            {sources.map((source: SourceDescriptor) => (
               <button
                 className={`session-card ${source.id === selectedId ? "session-card-active" : ""}`}
                 key={source.id}
@@ -135,6 +217,7 @@ export function App() {
                 <strong>{source.name}</strong>
                 <span>{source.mode}</span>
                 <p>{source.subtitle}</p>
+                <em>{source.status}</em>
                 <small>{source.typing}</small>
               </button>
             ))}
@@ -201,9 +284,29 @@ export function App() {
               </div>
               <span className="status-pill">{feed.length} typed messages</span>
             </div>
+            <div className="demo-toolbar">
+              <button className="search-button" onClick={() => void window.verbumApp.runLaunchDemo()} type="button">
+                Run 2-minute demo
+              </button>
+              {demoCommands.map((item) => (
+                <button
+                  className="chip"
+                  key={`${item.sessionId}-${item.command}`}
+                  onClick={() =>
+                    void window.verbumApp.runTerminalCommand({
+                      ...item,
+                      conversationId: selectedConversationId
+                    })
+                  }
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             <div className="composer">
               <select onChange={(event) => setRouteTo(event.target.value)} value={routeTo}>
-                {sourceDescriptors.map((source) => (
+                {sources.map((source) => (
                   <option key={source.id} value={source.id}>
                     Route to {source.name}
                   </option>
@@ -219,45 +322,10 @@ export function App() {
                   if (!content) {
                     return;
                   }
-
-                  const source = sourceDescriptors.find((descriptor) => descriptor.id === routeTo);
-                  if (!source) {
-                    return;
-                  }
-
-                  startTransition(() => {
-                    setFeed((current) => [
-                      {
-                        id: `user-${current.length + 1}`,
-                        sourceId: "inbox",
-                        sourceLabel: "Inbox",
-                        sourceKind: "human",
-                        role: "user",
-                        title: "Routed message",
-                        timestamp: "Now",
-                        blocks: [{ type: "markdown", text: content }]
-                      },
-                      {
-                        id: `system-${current.length + 2}`,
-                        sourceId: source.id,
-                        sourceLabel: source.name,
-                        sourceKind: source.kind,
-                        role: "system",
-                        title: "Route accepted",
-                        timestamp: "Now",
-                        blocks: [
-                          {
-                            type: "status-list",
-                            items: [
-                              { label: "Destination", value: source.name },
-                              { label: "Mode", value: source.mode },
-                              { label: "Typed blocks", value: source.typing }
-                            ]
-                          }
-                        ]
-                      },
-                      ...current
-                    ]);
+                  void window.verbumApp.sendMessage({
+                    routeTo,
+                    content,
+                    conversationId: selectedConversationId
                   });
                 }}
                 type="button"
@@ -271,8 +339,8 @@ export function App() {
               ))}
             </div>
             <div className="terminal-grid">
-              {terminalSnapshots.map((terminal) => (
-                <article className="terminal-card" key={terminal.title}>
+              {terminals.map((terminal) => (
+                <article className="terminal-card" key={terminal.id}>
                   <strong>{terminal.title}</strong>
                   <pre>{terminal.lines.join("\n")}</pre>
                 </article>
@@ -294,8 +362,11 @@ export function App() {
                 <strong>{selectedSource.name}</strong>
               </div>
               <div>
-                <span>Mode</span>
-                <strong>{selectedSource.mode}</strong>
+                <span>Conversation</span>
+                <strong>
+                  {conversations.find((conversation) => conversation.id === selectedConversationId)?.title ??
+                    "Master conversation"}
+                </strong>
               </div>
               <div>
                 <span>Typed Support</span>

@@ -62,7 +62,7 @@ export function MessageRenderer({ message }: { message: AppMessage }) {
         <div>
           <strong>{message.title}</strong>
           <span>
-            {message.sourceLabel} · {message.timestamp}
+            {message.sourceLabel} · {message.conversationTitle} · {message.timestamp}
           </span>
         </div>
         <b>{message.sourceKind}</b>
@@ -71,4 +71,3 @@ export function MessageRenderer({ message }: { message: AppMessage }) {
     </article>
   );
 }
-

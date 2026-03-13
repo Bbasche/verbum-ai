@@ -19,7 +19,7 @@ export default function HomePage() {
               Read the docs
             </Link>
             <Link className="button button-secondary" href="/graph">
-              Explore the graph
+              View the Mac app
             </Link>
           </div>
         </div>

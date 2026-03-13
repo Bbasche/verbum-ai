@@ -31,6 +31,16 @@ Run the native app:
 npm run dev --workspace @verbum/mac
 ```
 
+The Mac app is the live Verbum client. The docs site is static.
+
+It can:
+
+- watch Claude task files in `~/.claude/tasks`
+- send one-off prompts to `claude`
+- send one-off prompts to `codex exec --json`
+- run terminal commands in tracked sessions
+- render custom JSONL sources defined in `verbum.app.config.json`
+
 Build the publishable package:
 
 ```bash

@@ -7,12 +7,12 @@ export const launchSurfaces = [
   {
     title: "Vercel-ready launch site",
     copy:
-      "Marketing, docs, and a clear native-app overview live in one Next.js app so the story, the product, and the docs stay in sync."
+      "A static marketing and docs site in Next.js keeps the story sharp without acting like a client itself."
   },
   {
     title: "Mac app story that lands",
     copy:
-      "The site explains the graph, inbox, search, and message bus while the native app carries the interactive experience."
+      "The site explains the graph, inbox, search, and message bus while the Mac app carries every live integration."
   },
   {
     title: "Launch collateral",

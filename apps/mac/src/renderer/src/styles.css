@@ -157,6 +157,12 @@ input {
   gap: 10px;
 }
 
+.conversation-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
 .session-card {
   width: 100%;
   text-align: left;
@@ -192,6 +198,14 @@ input {
   margin-top: 10px;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.session-card em {
+  display: block;
+  margin-top: 10px;
+  color: var(--cyan);
+  font-style: normal;
+  font-size: 0.78rem;
 }
 
 .session-card-active {
@@ -283,6 +297,17 @@ input {
 
 .graph-node-router {
   box-shadow: 0 0 0 1px rgba(90, 138, 90, 0.18);
+}
+
+.graph-node-custom {
+  box-shadow: 0 0 0 1px rgba(232, 224, 208, 0.16);
+}
+
+.demo-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
 
 .terminal-grid {

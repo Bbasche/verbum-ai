@@ -1,0 +1,16 @@
+{
+  "workspaceRoot": "/absolute/path/to/your/repo",
+  "customSources": [
+    {
+      "id": "custom-source",
+      "name": "Custom Source",
+      "command": "node",
+      "args": [
+        "./apps/mac/examples/custom-source.js"
+      ],
+      "cwd": "/absolute/path/to/verbum",
+      "autostart": false
+    }
+  ]
+}
+

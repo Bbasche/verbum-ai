@@ -1,5 +1,9 @@
-import { app, BrowserWindow, nativeTheme } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { join } from "node:path";
+
+import { BridgeManager } from "./bridge-manager.js";
+
+const bridgeManager = new BridgeManager();
 
 function createWindow(): void {
   nativeTheme.themeSource = "dark";
@@ -27,6 +31,14 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  bridgeManager.start();
+
+  ipcMain.handle("verbum:get-snapshot", () => bridgeManager.getSnapshot());
+  ipcMain.handle("verbum:send-message", (_event, request) => bridgeManager.sendMessage(request));
+  ipcMain.handle("verbum:run-terminal", (_event, request) => bridgeManager.runTerminalCommand(request));
+  ipcMain.handle("verbum:run-demo", () => bridgeManager.runLaunchDemo());
+  ipcMain.handle("verbum:spawn-conversation", (_event, request) => bridgeManager.spawnConversation(request));
+
   createWindow();
 
   app.on("activate", () => {
@@ -42,3 +54,8 @@ app.on("window-all-closed", () => {
   }
 });
 
+bridgeManager.on("snapshot", (snapshot) => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send("verbum:snapshot", snapshot);
+  }
+});

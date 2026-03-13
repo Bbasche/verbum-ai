@@ -5,10 +5,11 @@ export default function GraphPage() {
     <div className="page-stack">
       <section className="panel intro-panel">
         <span className="eyebrow">Verbum App</span>
-        <h1>Graph, search, inbox, and message bus in one surface.</h1>
+        <h1>The Mac app brings graph, search, inbox, and terminals together.</h1>
         <p>
-          This page is the static overview for the native app. The interactive graph, inbox controls, and
-          conversational search live in the Mac app, not on the docs site.
+          This page is a static product overview only. The docs site does not connect to local tools,
+          sessions, or sources. Live graphing, search, routing, and source bridges live only in the Mac
+          app.
         </p>
       </section>
       <GraphPreview />

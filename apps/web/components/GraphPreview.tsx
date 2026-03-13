@@ -8,8 +8,8 @@ export function GraphPreview() {
     <div className="graph-studio">
       <section className="panel panel-graph">
         <div className="panel-topline">
-          <span className="eyebrow">Native App Preview</span>
-          <span className="badge-live">Mac app surface</span>
+          <span className="eyebrow">Static App Overview</span>
+          <span className="badge-live">Marketing only</span>
         </div>
         <div className="graph-shell">
           <svg className="graph-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
@@ -42,9 +42,9 @@ export function GraphPreview() {
             </div>
           ))}
           <div className="graph-hud">
-            <span>7 nodes</span>
-            <span>19 live edges/min</span>
-            <span>Native search</span>
+            <span>Example system map</span>
+            <span>Native app view</span>
+            <span>Not interactive on the site</span>
           </div>
         </div>
         <div className="inspector-grid">
@@ -54,7 +54,7 @@ export function GraphPreview() {
             <p>{featuredNode.detail}</p>
           </div>
           <div className="inspector-card">
-            <span className="eyebrow">Inbox</span>
+            <span className="eyebrow">Example Flow</span>
             <ul className="transcript">
               {inboxTranscript.map((entry) => (
                 <li key={`${entry.speaker}-${entry.route}`}>
@@ -70,26 +70,22 @@ export function GraphPreview() {
 
       <section className="panel panel-search">
         <div className="section-heading">
-          <span className="eyebrow">Native Search</span>
-          <h2>Conversational search lives in the Mac app.</h2>
+          <span className="eyebrow">Native Features</span>
+          <h2>The site describes the app. The app does the work.</h2>
           <p>
-            The docs site stays static. The native app is where fast local search, live graph inspection,
-            and inbox orchestration happen.
+            This website stays static on purpose. The Mac app is the only place that connects to Claude
+            Code, Codex, terminals, search, or inbox routing.
           </p>
         </div>
 
         <div className="search-layout">
           <div className="conversation-log">
-            <article className="turn turn-user">
-              <span className="turn-role">Founder</span>
-              <p>How does Verbum orchestrate Claude Code, Codex, and multiple terminals?</p>
-            </article>
             <article className="turn turn-assistant">
-              <span className="turn-role">Verbum Search</span>
+              <span className="turn-role">In the Mac app</span>
               <p>
-                Verbum App sits above Claude Code, Codex, and PTY terminals. It does not replace them. It
-                makes them visible in one command center, then uses local retrieval to answer from docs,
-                traces, and launch materials.
+                Verbum App sits above Claude Code, Codex, and PTY terminals. It makes them visible in one
+                command center, then uses local retrieval to answer from docs, traces, and launch
+                materials.
               </p>
               <div className="citation-row">
                 {featuredCitations.map((citation) => (
@@ -102,7 +98,7 @@ export function GraphPreview() {
           </div>
 
           <aside className="result-rail">
-            <h3>What the native app adds</h3>
+            <h3>What only the app does</h3>
             <ul>
               <li>
                 <strong>Live graph</strong>
