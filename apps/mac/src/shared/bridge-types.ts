@@ -35,6 +35,7 @@ export interface AppMessage {
   role: "user" | "assistant" | "system" | "tool";
   title: string;
   timestamp: string;
+  createdAt?: string;
   blocks: MessageBlock[];
 }
 
@@ -91,6 +92,14 @@ export interface SendMessageRequest {
   routeTo: string;
   content: string;
   conversationId?: string;
+}
+
+export interface ContextPromptRequest {
+  routeTo: string;
+  prompt: string;
+  conversationId?: string;
+  lookbackDays?: number;
+  sourceIds?: string[];
 }
 
 export interface RunTerminalRequest {

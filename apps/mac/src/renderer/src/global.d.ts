@@ -1,6 +1,7 @@
 import type {
   BridgeSnapshot,
   ConversationSummary,
+  ContextPromptRequest,
   RunTerminalRequest,
   SendMessageRequest,
   SetupStatus,
@@ -14,6 +15,7 @@ declare global {
       version: string;
       getSnapshot(): Promise<BridgeSnapshot>;
       sendMessage(request: SendMessageRequest): Promise<void>;
+      sendContextPrompt(request: ContextPromptRequest): Promise<void>;
       runTerminalCommand(request: RunTerminalRequest): Promise<void>;
       runLaunchDemo(): Promise<void>;
       spawnConversation(request: SpawnConversationRequest): Promise<ConversationSummary>;

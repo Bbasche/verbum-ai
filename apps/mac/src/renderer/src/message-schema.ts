@@ -2,6 +2,7 @@ export type {
   AppMessage,
   BridgeSnapshot,
   ConversationSummary,
+  ContextPromptRequest,
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,

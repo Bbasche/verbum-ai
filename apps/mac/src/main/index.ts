@@ -42,6 +42,7 @@ app.whenReady().then(() => {
   ipcMain.handle("verbum:get-snapshot", () => bridgeManager.getSnapshot());
   ipcMain.handle("verbum:get-setup-status", () => bridgeManager.getSetupStatus());
   ipcMain.handle("verbum:send-message", (_event, request) => bridgeManager.sendMessage(request));
+  ipcMain.handle("verbum:send-context-prompt", (_event, request) => bridgeManager.sendContextPrompt(request));
   ipcMain.handle("verbum:run-terminal", (_event, request) => bridgeManager.runTerminalCommand(request));
   ipcMain.handle("verbum:run-demo", () => bridgeManager.runLaunchDemo());
   ipcMain.handle("verbum:spawn-conversation", (_event, request) => bridgeManager.spawnConversation(request));

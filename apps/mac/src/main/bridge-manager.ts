@@ -9,6 +9,7 @@ import type {
   AppMessage,
   BridgeSnapshot,
   ConversationSummary,
+  ContextPromptRequest,
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,
@@ -142,19 +143,95 @@ export class BridgeManager extends EventEmitter<{
       blocks: [{ type: "markdown", text: content }]
     });
 
-    if (request.routeTo === "claude-code") {
+    await this.dispatchRoute(request.routeTo, content, conversation);
+  }
+
+  async sendContextPrompt(request: ContextPromptRequest): Promise<void> {
+    const prompt = request.prompt.trim();
+    const conversation = this.ensureConversation(request.conversationId, "Master");
+    if (!prompt) {
+      return;
+    }
+
+    const contextPack = this.buildContextPack({
+      lookbackDays: request.lookbackDays ?? 7,
+      sourceIds: request.sourceIds
+    });
+
+    this.pushMessage({
+      id: randomUUID(),
+      conversationId: conversation.id,
+      conversationTitle: conversation.title,
+      sourceId: "inbox",
+      sourceLabel: "Inbox",
+      sourceKind: "human",
+      role: "user",
+      title: "Cross-thread prompt",
+      timestamp: timestamp(),
+      blocks: [{ type: "markdown", text: prompt }]
+    });
+
+    this.pushMessage({
+      id: randomUUID(),
+      conversationId: conversation.id,
+      conversationTitle: conversation.title,
+      sourceId: "verbum-app",
+      sourceLabel: "Verbum App",
+      sourceKind: "custom",
+      role: "system",
+      title: "Cross-thread context attached",
+      timestamp: timestamp(),
+      blocks: [
+        {
+          type: "status-list",
+          items: [
+            { label: "Window", value: `Last ${contextPack.lookbackDays} days` },
+            { label: "Messages", value: String(contextPack.messageCount) },
+            { label: "Threads", value: String(contextPack.conversationCount) },
+            { label: "Sources", value: contextPack.sources.join(", ") || "all" }
+          ]
+        },
+        {
+          type: "markdown",
+          text: contextPack.threadTitles.length > 0
+            ? `Included threads: ${contextPack.threadTitles.slice(0, 8).join(", ")}`
+            : "No imported threads were found for the selected window."
+        }
+      ]
+    });
+
+    await this.dispatchRoute(
+      request.routeTo,
+      [
+        prompt,
+        "",
+        "Use the Verbum cross-thread context below as authoritative machine history.",
+        "Reference concrete accomplishments, loose ends, next steps, and unresolved questions.",
+        "",
+        contextPack.content
+      ].join("\n"),
+      conversation
+    );
+  }
+
+  private async dispatchRoute(
+    routeTo: string,
+    content: string,
+    conversation: ConversationSummary
+  ): Promise<void> {
+    if (routeTo === "claude-code") {
       await this.sendToClaude(content, conversation);
       return;
     }
 
-    if (request.routeTo === "codex") {
+    if (routeTo === "codex") {
       await this.sendToCodex(content, conversation);
       return;
     }
 
-    if (request.routeTo === "shell-1" || request.routeTo === "shell-2") {
+    if (routeTo === "shell-1" || routeTo === "shell-2") {
       await this.runTerminalCommand({
-        sessionId: request.routeTo,
+        sessionId: routeTo,
         command: content,
         conversationId: conversation.id
       });
@@ -165,19 +242,90 @@ export class BridgeManager extends EventEmitter<{
       id: randomUUID(),
       conversationId: conversation.id,
       conversationTitle: conversation.title,
-      sourceId: request.routeTo,
-      sourceLabel: this.sources.get(request.routeTo)?.name ?? request.routeTo,
-      sourceKind: this.sources.get(request.routeTo)?.kind ?? "custom",
+      sourceId: routeTo,
+      sourceLabel: this.sources.get(routeTo)?.name ?? routeTo,
+      sourceKind: this.sources.get(routeTo)?.kind ?? "custom",
       role: "system",
       title: "Route accepted",
       timestamp: timestamp(),
       blocks: [
         {
           type: "markdown",
-          text: `Verbum recorded your message for \`${request.routeTo}\`. That source does not implement direct prompting yet, but it can still stream observed events into the app.`
+          text: `Verbum recorded your message for \`${routeTo}\`. That source does not implement direct prompting yet, but it can still stream observed events into the app.`
         }
       ]
     });
+
+    this.emitSnapshot();
+  }
+
+  private buildContextPack(config: {
+    lookbackDays: number;
+    sourceIds?: string[];
+  }): {
+    lookbackDays: number;
+    messageCount: number;
+    conversationCount: number;
+    sources: string[];
+    threadTitles: string[];
+    content: string;
+  } {
+    const cutoff = Date.now() - config.lookbackDays * 24 * 60 * 60 * 1000;
+    const allowedSources = new Set(
+      (config.sourceIds?.length ? config.sourceIds : ["claude-code", "codex", "shell-1", "shell-2", "inbox", "verbum-app"])
+    );
+    const filtered = this.messages.filter((message) => {
+      if (!allowedSources.has(message.sourceId)) {
+        return false;
+      }
+
+      const createdAt = message.createdAt ? new Date(message.createdAt).getTime() : Date.now();
+      return Number.isFinite(createdAt) && createdAt >= cutoff;
+    });
+
+    const byConversation = new Map<string, AppMessage[]>();
+    for (const message of filtered) {
+      const bucket = byConversation.get(message.conversationId) ?? [];
+      bucket.push(message);
+      byConversation.set(message.conversationId, bucket);
+    }
+
+    const conversationLines = [...byConversation.entries()]
+      .sort((left, right) => {
+        const leftTime = new Date(left[1][0]?.createdAt ?? 0).getTime();
+        const rightTime = new Date(right[1][0]?.createdAt ?? 0).getTime();
+        return rightTime - leftTime;
+      })
+      .slice(0, 16)
+      .map(([conversationId, messages]) => {
+        const summary = this.conversations.get(conversationId);
+        const header = `## ${summary?.title ?? conversationId} (${summary?.sourceLabel ?? "Verbum"})`;
+        const items = messages
+          .slice(0, 10)
+          .reverse()
+          .map((message) => {
+            const preview = summarizeBlocks(message.blocks);
+            return `- [${message.timestamp}] ${message.sourceLabel} ${message.role}: ${preview}`;
+          });
+        return [header, ...items].join("\n");
+      });
+
+    const threadTitles = [...byConversation.keys()]
+      .map((conversationId) => this.conversations.get(conversationId)?.title ?? conversationId);
+
+    return {
+      lookbackDays: config.lookbackDays,
+      messageCount: filtered.length,
+      conversationCount: byConversation.size,
+      sources: [...allowedSources].map((sourceId) => this.sources.get(sourceId)?.name ?? sourceId),
+      threadTitles,
+      content: [
+        `Context window: last ${config.lookbackDays} days`,
+        `Included sources: ${[...allowedSources].map((sourceId) => this.sources.get(sourceId)?.name ?? sourceId).join(", ")}`,
+        "",
+        ...conversationLines
+      ].join("\n")
+    };
   }
 
   async runTerminalCommand(request: RunTerminalRequest): Promise<void> {
@@ -679,6 +827,7 @@ export class BridgeManager extends EventEmitter<{
             role: "system",
             title: "Codex thread attached",
             timestamp: timestamp(),
+            createdAt: normalizeCreatedAt(event.timestamp),
             blocks: [
               {
                 type: "status-list",
@@ -704,14 +853,15 @@ export class BridgeManager extends EventEmitter<{
           externalThreadId: sessionId
         });
       const eventTimestamp = formatLogTimestamp(event.timestamp);
+      const eventCreatedAt = normalizeCreatedAt(event.timestamp);
 
       if (event.type === "response_item") {
-        this.ingestCodexResponseItem(event.payload ?? {}, conversation, eventTimestamp);
+        this.ingestCodexResponseItem(event.payload ?? {}, conversation, eventTimestamp, eventCreatedAt);
         return;
       }
 
       if (event.type === "event_msg") {
-        this.ingestCodexEventMessage(event.payload ?? {}, conversation, eventTimestamp);
+        this.ingestCodexEventMessage(event.payload ?? {}, conversation, eventTimestamp, eventCreatedAt);
       }
     } catch {
       // Ignore partial writes.
@@ -730,6 +880,7 @@ export class BridgeManager extends EventEmitter<{
 
     try {
       const task = JSON.parse(readFileSync(filePath, "utf8")) as ClaudeTaskFile;
+      const taskCreatedAt = isoFromMtime(filePath);
       this.processedClaudeFiles.add(fileKey);
       const threadId = inferClaudeThreadId(filePath);
       const conversationId = claudeConversationId(threadId);
@@ -758,6 +909,7 @@ export class BridgeManager extends EventEmitter<{
           role: "system",
           title: "Claude thread attached",
           timestamp: timestamp(),
+          createdAt: taskCreatedAt,
           blocks: [
             {
               type: "status-list",
@@ -780,6 +932,7 @@ export class BridgeManager extends EventEmitter<{
         role: "system",
         title: task.subject ?? "Claude task update",
         timestamp: timestamp(),
+        createdAt: taskCreatedAt,
         blocks: [
           {
             type: "markdown",
@@ -1052,7 +1205,8 @@ export class BridgeManager extends EventEmitter<{
   private ingestCodexResponseItem(
     payload: Record<string, unknown>,
     conversation: ConversationSummary,
-    eventTimestamp: string
+    eventTimestamp: string,
+    eventCreatedAt: string
   ): void {
     const itemType = typeof payload.type === "string" ? payload.type : "";
 
@@ -1077,6 +1231,7 @@ export class BridgeManager extends EventEmitter<{
         role,
         title: role === "user" ? "Codex prompt" : "Codex reply",
         timestamp: eventTimestamp,
+        createdAt: eventCreatedAt,
         blocks: textToBlocks(text)
       });
       this.emitSnapshot();
@@ -1102,6 +1257,7 @@ export class BridgeManager extends EventEmitter<{
         role: "tool",
         title: `Codex tool: ${toolName}`,
         timestamp: eventTimestamp,
+        createdAt: eventCreatedAt,
         blocks: [
           {
             type: "tool",
@@ -1130,6 +1286,7 @@ export class BridgeManager extends EventEmitter<{
         role: "tool",
         title: "Codex tool output",
         timestamp: eventTimestamp,
+        createdAt: eventCreatedAt,
         blocks: [
           {
             type: "command",
@@ -1145,7 +1302,8 @@ export class BridgeManager extends EventEmitter<{
   private ingestCodexEventMessage(
     payload: Record<string, unknown>,
     conversation: ConversationSummary,
-    eventTimestamp: string
+    eventTimestamp: string,
+    eventCreatedAt: string
   ): void {
     const eventType = typeof payload.type === "string" ? payload.type : "";
     if (!eventType || eventType === "token_count") {
@@ -1171,6 +1329,7 @@ export class BridgeManager extends EventEmitter<{
       role: "system",
       title: titleCaseEventLabel(eventType),
       timestamp: eventTimestamp,
+      createdAt: eventCreatedAt,
       blocks: [{ type: "markdown", text: detail }]
     });
     this.emitSnapshot();
@@ -1283,8 +1442,12 @@ export class BridgeManager extends EventEmitter<{
   }
 
   private pushMessage(message: AppMessage): void {
-    this.touchConversation(message.conversationId, message.conversationTitle);
-    this.messages.unshift(message);
+    const nextMessage = {
+      ...message,
+      createdAt: message.createdAt ?? new Date().toISOString()
+    };
+    this.touchConversation(nextMessage.conversationId, nextMessage.conversationTitle);
+    this.messages.unshift(nextMessage);
     this.messages.splice(150);
   }
 
@@ -1418,6 +1581,20 @@ function formatLogTimestamp(value: string | undefined): string {
   });
 }
 
+function normalizeCreatedAt(value: string | undefined): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
+function isoFromMtime(filePath: string): string {
+  const mtime = safeMtime(filePath);
+  return mtime > 0 ? new Date(mtime).toISOString() : new Date().toISOString();
+}
+
 function codexContentToText(content: unknown): string {
   if (!Array.isArray(content)) {
     return "";
@@ -1467,6 +1644,32 @@ function titleCaseEventLabel(value: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function summarizeBlocks(blocks: MessageBlock[]): string {
+  const parts = blocks
+    .map((block) => {
+      switch (block.type) {
+        case "markdown":
+          return block.text;
+        case "code":
+          return `${block.filename ?? block.language} code block`;
+        case "command":
+          return `${block.command}: ${block.output.split("\n").slice(0, 2).join(" ")}`;
+        case "tool":
+          return `${block.name} ${block.status}: ${block.output}`;
+        case "status-list":
+          return block.items.map((item) => `${item.label} ${item.value}`).join(", ");
+        default:
+          return "";
+      }
+    })
+    .filter(Boolean)
+    .join(" | ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return parts.length > 220 ? `${parts.slice(0, 217)}...` : parts || "(no content)";
 }
 
 function findExecutable(candidates: string[]): string | null {

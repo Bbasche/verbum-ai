@@ -590,6 +590,21 @@ export function App() {
               <button className="search-button" onClick={() => void window.verbumApp.runLaunchDemo()} type="button">
                 Run 2-minute demo
               </button>
+              <button
+                className="action-button"
+                onClick={() =>
+                  void window.verbumApp.sendContextPrompt({
+                    routeTo,
+                    conversationId: selectedConversationId,
+                    lookbackDays: 7,
+                    prompt:
+                      "Look at what I have done this week across all Verbum, Claude Code, Codex, and terminal threads on this machine. Write a report covering accomplishments, loose ends, next steps, and unresolved questions."
+                  })
+                }
+                type="button"
+              >
+                Weekly report
+              </button>
               {demoCommands.map((item) => (
                 <button
                   className="chip"
@@ -616,6 +631,25 @@ export function App() {
                 ))}
               </select>
               <input onChange={(event) => setComposerValue(event.target.value)} value={composerValue} />
+              <button
+                className="composer-context-button"
+                onClick={() => {
+                  const content = composerValue.trim();
+                  if (!content) {
+                    return;
+                  }
+
+                  void window.verbumApp.sendContextPrompt({
+                    routeTo,
+                    prompt: content,
+                    conversationId: selectedConversationId,
+                    lookbackDays: 7
+                  });
+                }}
+                type="button"
+              >
+                Send with week
+              </button>
               <button
                 onClick={() => {
                   const content = composerValue.trim();

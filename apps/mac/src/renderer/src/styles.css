@@ -388,6 +388,13 @@ button {
   box-shadow: 0 16px 34px rgba(200, 75, 47, 0.28);
 }
 
+.composer-context-button {
+  background: rgba(200, 75, 47, 0.1) !important;
+  border: 1px solid var(--border-strong) !important;
+  color: var(--text-strong) !important;
+  box-shadow: none !important;
+}
+
 .setup-action:disabled {
   opacity: 0.65;
   cursor: wait;
@@ -621,7 +628,7 @@ button {
 
 .composer {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) auto;
+  grid-template-columns: 220px minmax(0, 1fr) auto auto;
   gap: 10px;
 }
 
