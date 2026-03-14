@@ -67,7 +67,7 @@ interface RoutedModelOptions {
 export class BridgeManager extends EventEmitter<{
   snapshot: [snapshot: BridgeSnapshot];
 }> {
-  private readonly version = "0.1.7";
+  private readonly version = "0.1.8";
   private readonly workspaceRoot: string;
   private readonly verbumConfigDir = join(homedir(), ".config", "verbum");
   private readonly serviceLabel = "ai.verbum.helper";

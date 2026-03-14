@@ -1246,7 +1246,7 @@ export function App() {
                 onClick={() => void sendCurrentPrompt(true)}
                 type="button"
               >
-                Send with week
+                Send with 1 week global messages
               </button>
               <button
                 onClick={() => void sendCurrentPrompt(false)}
@@ -1276,7 +1276,7 @@ export function App() {
 
             <div className="shortcut-row">
               <span>`Cmd+Enter` send</span>
-              <span>`Shift+Cmd+Enter` send with week</span>
+              <span>`Shift+Cmd+Enter` send with 1 week global messages</span>
               <span>`Cmd+O` add files</span>
               <span>`/` focus composer</span>
             </div>

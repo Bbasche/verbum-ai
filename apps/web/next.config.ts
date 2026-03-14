@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/download/mac",
-        destination: "https://github.com/Bbasche/verbum-ai/releases/download/v0.1.7/Verbum.dmg",
+        destination: "https://github.com/Bbasche/verbum-ai/releases/download/v0.1.8/Verbum.dmg",
         permanent: false
       }
     ];
