@@ -441,17 +441,56 @@ button {
   align-content: start;
 }
 
+.thread-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.thread-filter {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.thread-filter-active {
+  border-color: var(--border-strong);
+  background: rgba(200, 75, 47, 0.12);
+  color: var(--text-strong);
+}
+
 .conversation-section {
   display: grid;
   gap: 8px;
+}
+
+.thread-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.thread-section-head span:last-child {
+  color: var(--muted-2);
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.68rem;
 }
 
 .session-card {
   width: 100%;
   padding: 12px 13px;
   border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid rgba(248, 243, 235, 0.04);
+  background: rgba(255, 255, 255, 0.015);
   text-align: left;
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
@@ -480,8 +519,8 @@ button {
 }
 
 .session-card span {
-  color: #f0bf75;
-  font-size: 0.63rem;
+  color: var(--muted-2);
+  font-size: 0.67rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -490,6 +529,21 @@ button {
   margin-top: 6px;
   color: var(--muted);
   font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.session-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.session-card-meta span {
+  color: #f0bf75;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
 }
 
 .session-card small {
@@ -506,6 +560,70 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.thread-header-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at top right, rgba(200, 75, 47, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.015);
+}
+
+.thread-header-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.thread-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 14px;
+}
+
+.thread-title-row h2 {
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.35rem;
+  line-height: 1.04;
+  color: var(--text-strong);
+}
+
+.thread-header-copy p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.thread-summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.thread-summary-card {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 243, 235, 0.06);
+  background: rgba(8, 6, 6, 0.34);
+}
+
+.thread-summary-card span {
+  display: block;
+  color: var(--muted);
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.thread-summary-card strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-strong);
+  font-size: 0.92rem;
 }
 
 .setup-panel {
@@ -883,10 +1001,19 @@ button {
   color: var(--text);
 }
 
+.source-pill-static {
+  cursor: default;
+}
+
 .source-pill-active {
   border-color: var(--border-strong);
   background: rgba(200, 75, 47, 0.1);
   color: var(--text-strong);
+}
+
+.thread-detail-section {
+  display: grid;
+  gap: 10px;
 }
 
 .terminal-grid {
@@ -1384,6 +1511,10 @@ button {
 
   .graph-node {
     max-width: 108px;
+  }
+
+  .thread-summary-row {
+    grid-template-columns: 1fr;
   }
 }
 

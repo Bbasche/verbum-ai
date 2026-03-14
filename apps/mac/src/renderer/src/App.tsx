@@ -8,12 +8,19 @@ import {
 
 import { graphEdges, graphNodes, searchDocuments } from "./demo-data";
 import { MessageRenderer } from "./MessageRenderer";
-import type { BridgeSnapshot, ConversationSummary, SetupStatus, SourceDescriptor } from "./message-schema";
+import type {
+  AppMessage,
+  BridgeSnapshot,
+  ConversationSummary,
+  SetupStatus,
+  SourceDescriptor
+} from "./message-schema";
 import verbumMacIcon from "./assets/verbum-mac-icon-1024.png";
 
 type SearchCitation = (typeof searchDocuments)[number];
 type AppTab = "chat" | "feed" | "graph";
 type GraphFocus = "all" | "selected" | "live";
+type ThreadFilter = "all" | "verbum" | "claude-code" | "codex" | "terminal";
 
 const tabCopy: Record<AppTab, { title: string; description: string }> = {
   chat: {
@@ -117,6 +124,68 @@ function graphNodeLabel(
   return graphCategoryLabel(source?.kind ?? fallbackType);
 }
 
+function threadFilterLabel(value: ThreadFilter): string {
+  switch (value) {
+    case "verbum":
+      return "Verbum";
+    case "claude-code":
+      return "Claude";
+    case "codex":
+      return "Codex";
+    case "terminal":
+      return "Terminal";
+    default:
+      return "All";
+  }
+}
+
+function threadMatchesFilter(
+  conversation: ConversationSummary,
+  filter: ThreadFilter,
+  sourceById: Map<string, SourceDescriptor>,
+  threadMessages: AppMessage[]
+): boolean {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "verbum") {
+    return conversation.kind === "master" || conversation.kind === "side";
+  }
+
+  if (filter === "terminal") {
+    return threadMessages.some((message) => message.sourceKind === "terminal");
+  }
+
+  const sourceId = conversation.sourceId ?? threadMessages[0]?.sourceId;
+  const sourceKind = sourceId ? sourceById.get(sourceId)?.kind : undefined;
+  return sourceId === filter || sourceKind === filter;
+}
+
+function previewMessage(message: AppMessage | undefined): string {
+  if (!message) {
+    return "No messages yet";
+  }
+
+  const block = message.blocks[0];
+  if (!block) {
+    return "No content";
+  }
+
+  const text =
+    block.type === "markdown"
+      ? block.text
+      : block.type === "code"
+        ? `${block.filename ?? block.language} code block`
+        : block.type === "command"
+          ? `$ ${block.command}`
+          : block.type === "tool"
+            ? `${block.name} ${block.status}`
+            : block.items.map((item: { label: string; value: string }) => `${item.label} ${item.value}`).join(", ");
+
+  return text.length > 96 ? `${text.slice(0, 93)}...` : text;
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("chat");
   const [selectedId, setSelectedId] = useState("verbum-app");
@@ -126,6 +195,7 @@ export function App() {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [routeTo, setRouteTo] = useState("claude-code");
   const [graphFocus, setGraphFocus] = useState<GraphFocus>("selected");
+  const [threadFilter, setThreadFilter] = useState<ThreadFilter>("all");
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
   );
@@ -190,6 +260,12 @@ export function App() {
   const threadMessages = allMessages.filter(
     (message) => message.conversationId === selectedConversationId
   );
+  const messagesByConversation = new Map<string, AppMessage[]>();
+  for (const message of allMessages) {
+    const bucket = messagesByConversation.get(message.conversationId) ?? [];
+    bucket.push(message);
+    messagesByConversation.set(message.conversationId, bucket);
+  }
   const conversationSections = [
     {
       key: "master",
@@ -207,6 +283,19 @@ export function App() {
       items: sortConversations(conversations.filter((conversation) => conversation.kind === "imported"))
     }
   ].filter((section) => section.items.length > 0);
+  const filteredConversationSections = conversationSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((conversation) =>
+        threadMatchesFilter(
+          conversation,
+          threadFilter,
+          sourceById,
+          messagesByConversation.get(conversation.id) ?? []
+        )
+      )
+    }))
+    .filter((section) => section.items.length > 0);
   const globalMessages = [...allMessages].reverse();
   const activeEdge = graphEdges[pulseIndex] ?? graphEdges[0];
 
@@ -278,6 +367,21 @@ export function App() {
     .filter((message) => message.sourceId === selectedId)
     .slice(-3)
     .reverse();
+  const selectedConversationMessages = messagesByConversation.get(selectedConversationId) ?? [];
+  const selectedConversationLatest = selectedConversationMessages[0];
+  const selectedConversationSources = [
+    ...new Map(
+      selectedConversationMessages.map((message) => [
+        message.sourceId,
+        {
+          id: message.sourceId,
+          name: message.sourceLabel,
+          kind: message.sourceKind
+        }
+      ])
+    ).values()
+  ];
+  const threadFilterOptions: ThreadFilter[] = ["all", "verbum", "claude-code", "codex", "terminal"];
 
   const liveMatches = [...searchDocuments]
     .map((document) => ({ document, score: scoreDocument(deferredQuery, document) }))
@@ -413,7 +517,7 @@ export function App() {
             <div className="panel-head panel-head-inline">
               <div>
                 <span className="eyebrow">Threads</span>
-                <p>Browse active conversations and open a new thread when you want a separate lane.</p>
+                <p>Browse machine conversations by source and jump straight into the one you need.</p>
               </div>
               <button
                 className="action-button"
@@ -428,15 +532,35 @@ export function App() {
               </button>
             </div>
 
+            <div className="thread-filter-row">
+              {threadFilterOptions.map((filter) => (
+                <button
+                  className={threadFilter === filter ? "thread-filter thread-filter-active" : "thread-filter"}
+                  key={filter}
+                  onClick={() => setThreadFilter(filter)}
+                  type="button"
+                >
+                  {threadFilterLabel(filter)}
+                </button>
+              ))}
+            </div>
+
             <div className="conversation-list">
-              {conversationSections.map((section) => (
+              {filteredConversationSections.map((section) => (
                 <section className="conversation-section" key={section.key}>
-                  <span className="eyebrow">{section.label}</span>
+                  <div className="thread-section-head">
+                    <span className="eyebrow">{section.label}</span>
+                    <span>{section.items.length}</span>
+                  </div>
                   <div className="conversation-section-list">
                     {section.items.map((conversation: ConversationSummary) => {
-                      const count = allMessages.filter(
-                        (message) => message.conversationId === conversation.id
-                      ).length;
+                      const messages = messagesByConversation.get(conversation.id) ?? [];
+                      const count = messages.length;
+                      const latestMessage = messages[0];
+                      const sourceName =
+                        conversation.sourceLabel ??
+                        latestMessage?.sourceLabel ??
+                        (conversation.kind === "master" ? "Verbum" : "Side thread");
 
                       return (
                         <button
@@ -449,9 +573,13 @@ export function App() {
                         >
                           <div className="session-card-row">
                             <strong>{conversation.title}</strong>
-                            <span>{conversation.sourceLabel ?? conversation.status}</span>
+                            <span>{latestMessage?.timestamp ?? conversation.lastActivity}</span>
                           </div>
-                          <p>{count} messages</p>
+                          <p>{previewMessage(latestMessage)}</p>
+                          <div className="session-card-meta">
+                            <span>{sourceName}</span>
+                            <span>{count} msgs</span>
+                          </div>
                           <small>
                             {conversation.externalThreadId
                               ? `Thread ${conversation.externalThreadId.slice(0, 8)} · `
@@ -573,18 +701,33 @@ export function App() {
               </section>
             ) : null}
 
-            <div className="panel-head panel-head-inline">
-              <div>
-                <span className="eyebrow">Conversation</span>
-                <h2>{selectedConversation?.title ?? "Master conversation"}</h2>
+            <section className="thread-header-card">
+              <div className="thread-header-copy">
+                <div className="thread-title-row">
+                  <h2>{selectedConversation?.title ?? "Master conversation"}</h2>
+                  <span className="status-pill">{threadMessages.length} messages</span>
+                </div>
                 <p>
                   {selectedConversation?.kind === "imported"
                     ? `${selectedConversation.sourceLabel ?? "Imported"} conversation imported into Verbum.`
                     : "Messages from connected sources appear here with their original structure preserved."}
                 </p>
               </div>
-              <span className="status-pill">{threadMessages.length} messages</span>
-            </div>
+              <div className="thread-summary-row">
+                <article className="thread-summary-card">
+                  <span>Primary source</span>
+                  <strong>{selectedConversationLatest?.sourceLabel ?? selectedConversation?.sourceLabel ?? "Verbum"}</strong>
+                </article>
+                <article className="thread-summary-card">
+                  <span>Last activity</span>
+                  <strong>{selectedConversationLatest?.timestamp ?? selectedConversation?.lastActivity ?? "Now"}</strong>
+                </article>
+                <article className="thread-summary-card">
+                  <span>Participants</span>
+                  <strong>{selectedConversationSources.length || 1}</strong>
+                </article>
+              </div>
+            </section>
 
             <div className="demo-toolbar">
               <button className="search-button" onClick={() => void window.verbumApp.runLaunchDemo()} type="button">
@@ -684,51 +827,84 @@ export function App() {
 
           <aside className="panel tab-inspector">
             <div className="panel-head">
-              <span className="eyebrow">Inspector</span>
-              <h2>{selectedSource.name}</h2>
-              <p>{selectedSource.subtitle}</p>
+              <span className="eyebrow">Details</span>
+              <h2>{selectedConversation?.title ?? "Conversation"}</h2>
+              <p>Clean thread details, involved sources, and the current route target.</p>
             </div>
 
             <div className="inspector-metrics">
+              <div>
+                <span>Kind</span>
+                <strong>{selectedConversation?.kind ?? "thread"}</strong>
+              </div>
               <div>
                 <span>Route</span>
                 <strong>{selectedSource.name}</strong>
               </div>
               <div>
-                <span>Status</span>
-                <strong>{selectedSource.status}</strong>
-              </div>
-              <div>
-                <span>Typed support</span>
-                <strong>{selectedSource.typing}</strong>
+                <span>Thread id</span>
+                <strong>{selectedConversation?.externalThreadId?.slice(0, 8) ?? "local"}</strong>
               </div>
             </div>
 
-            <div className="source-palette">
-              {sources.map((source: SourceDescriptor) => (
-                <button
-                  className={`source-pill ${source.id === routeTo ? "source-pill-active" : ""}`}
-                  key={source.id}
-                  onClick={() => setRouteTo(source.id)}
-                  type="button"
-                >
-                  <span className={`status-dot ${source.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
-                  {source.name}
-                </button>
-              ))}
-            </div>
+            <section className="thread-detail-section">
+              <div className="panel-head">
+                <span className="eyebrow">Participants</span>
+                <p>Sources currently represented inside this thread.</p>
+              </div>
+              <div className="source-palette">
+                {selectedConversationSources.length > 0 ? (
+                  selectedConversationSources.map((source) => (
+                    <span className="source-pill source-pill-static" key={source.id}>
+                      <span className={`status-dot ${source.id === routeTo ? "status-dot-online" : "status-dot-idle"}`}></span>
+                      {source.name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="source-pill source-pill-static">Verbum</span>
+                )}
+              </div>
+            </section>
 
-            <div className="terminal-grid">
-              {terminals.map((terminal) => (
-                <article className="terminal-card" key={terminal.id}>
-                  <div className="terminal-card-head">
-                    <strong>{terminal.title}</strong>
-                    <span>{compactPath(terminal.cwd)}</span>
+            <section className="thread-detail-section">
+              <div className="panel-head">
+                <span className="eyebrow">Route target</span>
+                <p>Choose where the next message should go.</p>
+              </div>
+              <div className="source-palette">
+                {sources.map((source: SourceDescriptor) => (
+                  <button
+                    className={`source-pill ${source.id === routeTo ? "source-pill-active" : ""}`}
+                    key={source.id}
+                    onClick={() => setRouteTo(source.id)}
+                    type="button"
+                  >
+                    <span className={`status-dot ${source.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
+                    {source.name}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="thread-detail-section">
+              <div className="panel-head">
+                <span className="eyebrow">Latest in thread</span>
+                <p>Most recent message context for the open chat.</p>
+              </div>
+              {selectedConversationLatest ? (
+                <article className="activity-card">
+                  <div className="activity-card-row">
+                    <strong>{selectedConversationLatest.sourceLabel}</strong>
+                    <span>{selectedConversationLatest.timestamp}</span>
                   </div>
-                  <pre>{terminal.lines.join("\n")}</pre>
+                  <p>{previewMessage(selectedConversationLatest)}</p>
                 </article>
-              ))}
-            </div>
+              ) : (
+                <article className="activity-card">
+                  <p>No activity yet in this thread.</p>
+                </article>
+              )}
+            </section>
           </aside>
         </div>
       ) : null}
