@@ -2,6 +2,7 @@ import type {
   BridgeSnapshot,
   ConversationSummary,
   ContextPromptRequest,
+  FileAttachment,
   RunTerminalRequest,
   SendMessageRequest,
   SetupStatus,
@@ -16,6 +17,7 @@ declare global {
       getSnapshot(): Promise<BridgeSnapshot>;
       sendMessage(request: SendMessageRequest): Promise<void>;
       sendContextPrompt(request: ContextPromptRequest): Promise<void>;
+      pickFiles(): Promise<FileAttachment[]>;
       runTerminalCommand(request: RunTerminalRequest): Promise<void>;
       runLaunchDemo(): Promise<void>;
       spawnConversation(request: SpawnConversationRequest): Promise<ConversationSummary>;

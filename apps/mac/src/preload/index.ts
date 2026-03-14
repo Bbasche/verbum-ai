@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   BridgeSnapshot,
   ContextPromptRequest,
+  FileAttachment,
   RunTerminalRequest,
   SendMessageRequest,
   SetupStatus,
@@ -16,6 +17,7 @@ contextBridge.exposeInMainWorld("verbumApp", {
   sendMessage: (request: SendMessageRequest) => ipcRenderer.invoke("verbum:send-message", request),
   sendContextPrompt: (request: ContextPromptRequest) =>
     ipcRenderer.invoke("verbum:send-context-prompt", request),
+  pickFiles: () => ipcRenderer.invoke("verbum:pick-files") as Promise<FileAttachment[]>,
   runTerminalCommand: (request: RunTerminalRequest) =>
     ipcRenderer.invoke("verbum:run-terminal", request),
   runLaunchDemo: () => ipcRenderer.invoke("verbum:run-demo"),

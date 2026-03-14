@@ -3,6 +3,7 @@ export type {
   BridgeSnapshot,
   ConversationSummary,
   ContextPromptRequest,
+  FileAttachment,
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,

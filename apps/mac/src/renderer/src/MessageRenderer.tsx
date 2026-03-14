@@ -43,6 +43,21 @@ function renderBlock(block: MessageBlock, index: number) {
     );
   }
 
+  if (block.type === "attachment-list") {
+    return (
+      <div className="message-attachments" key={`attachments-${index}`}>
+        {block.items.map((item) => (
+          <div className="message-attachment-item" key={item.path}>
+            <strong>{item.name}</strong>
+            <span>
+              {item.kind} · {item.mimeType}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="message-status-list" key={`status-${index}`}>
       {block.items.map((item) => (

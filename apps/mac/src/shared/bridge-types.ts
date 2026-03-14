@@ -11,7 +11,17 @@ export type MessageBlock =
   | { type: "code"; language: string; code: string; filename?: string }
   | { type: "command"; command: string; output: string }
   | { type: "tool"; name: string; input: string; output: string; status: "running" | "done" }
-  | { type: "status-list"; items: Array<{ label: string; value: string }> };
+  | { type: "status-list"; items: Array<{ label: string; value: string }> }
+  | { type: "attachment-list"; items: FileAttachment[] };
+
+export interface FileAttachment {
+  path: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  kind: "text" | "binary";
+  preview?: string;
+}
 
 export interface SourceDescriptor {
   id: string;
@@ -92,6 +102,7 @@ export interface SendMessageRequest {
   routeTo: string;
   content: string;
   conversationId?: string;
+  attachments?: FileAttachment[];
 }
 
 export interface ContextPromptRequest {
@@ -100,6 +111,7 @@ export interface ContextPromptRequest {
   conversationId?: string;
   lookbackDays?: number;
   sourceIds?: string[];
+  attachments?: FileAttachment[];
 }
 
 export interface RunTerminalRequest {

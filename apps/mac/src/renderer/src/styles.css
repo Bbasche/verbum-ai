@@ -492,7 +492,8 @@ button {
   border: 1px solid rgba(248, 243, 235, 0.04);
   background: rgba(255, 255, 255, 0.015);
   text-align: left;
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, box-shadow 180ms ease;
+  animation: surface-in 260ms ease both;
 }
 
 .session-card:hover {
@@ -571,6 +572,7 @@ button {
   background:
     radial-gradient(circle at top right, rgba(200, 75, 47, 0.08), transparent 34%),
     rgba(255, 255, 255, 0.015);
+  animation: surface-in 260ms ease both;
 }
 
 .thread-header-copy {
@@ -777,6 +779,41 @@ button {
   padding-right: 2px;
 }
 
+.attachment-strip,
+.shortcut-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.attachment-chip span,
+.attachment-chip b,
+.shortcut-row span {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.67rem;
+  letter-spacing: 0.05em;
+}
+
+.attachment-chip b {
+  color: #f0bf75;
+  text-transform: uppercase;
+}
+
+.shortcut-row span {
+  color: var(--muted-2);
+}
+
 .empty-state {
   padding: 18px;
   border-radius: var(--radius-lg);
@@ -802,6 +839,7 @@ button {
   border: 1px solid var(--border);
   background: rgba(10, 7, 6, 0.35);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  animation: message-in 220ms ease both;
 }
 
 .message-card-user {
@@ -860,7 +898,8 @@ button {
 .message-code,
 .message-command,
 .message-tool,
-.message-status-list {
+.message-status-list,
+.message-attachments {
   overflow: hidden;
   border-radius: 14px;
   border: 1px solid var(--border);
@@ -927,6 +966,31 @@ button {
 
 .message-status-list strong {
   color: var(--text-strong);
+}
+
+.message-attachments {
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.message-attachment-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.message-attachment-item strong {
+  color: var(--text-strong);
+  font-size: 0.8rem;
+}
+
+.message-attachment-item span {
+  color: var(--muted);
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.66rem;
+  text-transform: uppercase;
 }
 
 .tab-inspector,
@@ -1492,6 +1556,30 @@ button {
   }
 
   to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
     transform: translateY(0);
   }
 }

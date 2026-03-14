@@ -3,6 +3,7 @@ import {
   useDeferredValue,
   useEffect,
   useEffectEvent,
+  useRef,
   useState
 } from "react";
 
@@ -12,6 +13,7 @@ import type {
   AppMessage,
   BridgeSnapshot,
   ConversationSummary,
+  FileAttachment,
   SetupStatus,
   SourceDescriptor
 } from "./message-schema";
@@ -181,6 +183,8 @@ function previewMessage(message: AppMessage | undefined): string {
           ? `$ ${block.command}`
           : block.type === "tool"
             ? `${block.name} ${block.status}`
+            : block.type === "attachment-list"
+              ? block.items.map((item) => item.name).join(", ")
             : block.items.map((item: { label: string; value: string }) => `${item.label} ${item.value}`).join(", ");
 
   return text.length > 96 ? `${text.slice(0, 93)}...` : text;
@@ -199,6 +203,7 @@ export function App() {
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
   );
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [snapshot, setSnapshot] = useState<BridgeSnapshot | null>(null);
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [setupBusy, setSetupBusy] = useState<"package" | "service" | null>(null);
@@ -211,6 +216,7 @@ export function App() {
   });
 
   const deferredQuery = useDeferredValue(query);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const sources = snapshot?.sources ?? [];
   const conversations = snapshot?.conversations ?? [];
   const allMessages = snapshot?.messages ?? [];
@@ -408,10 +414,147 @@ export function App() {
     setPulseIndex((current) => (current + 1) % graphEdges.length);
   });
 
+  const focusComposer = useEffectEvent(() => {
+    if (activeTab !== "chat") {
+      setActiveTab("chat");
+    }
+
+    window.setTimeout(() => composerInputRef.current?.focus(), 0);
+  });
+
+  const sendCurrentPrompt = useEffectEvent(async (withWeek: boolean) => {
+    const content = composerValue.trim();
+    if (!content) {
+      return;
+    }
+
+    if (withWeek) {
+      await window.verbumApp.sendContextPrompt({
+        routeTo,
+        prompt: content,
+        conversationId: selectedConversationId,
+        lookbackDays: 7,
+        attachments
+      });
+    } else {
+      await window.verbumApp.sendMessage({
+        routeTo,
+        content,
+        conversationId: selectedConversationId,
+        attachments
+      });
+    }
+
+    setComposerValue("");
+    setAttachments([]);
+  });
+
+  const createNewThread = useEffectEvent(() => {
+    void window.verbumApp
+      .spawnConversation({ title: `Side thread ${conversations.length}` })
+      .then((conversation) => setSelectedConversationId(conversation.id));
+  });
+
+  const pickFiles = useEffectEvent(async () => {
+    const next = await window.verbumApp.pickFiles();
+    if (next.length === 0) {
+      return;
+    }
+
+    setAttachments((current) => {
+      const merged = new Map(current.map((item) => [item.path, item]));
+      for (const item of next) {
+        merged.set(item.path, item);
+      }
+      return [...merged.values()];
+    });
+  });
+
   useEffect(() => {
     const interval = window.setInterval(() => tickPulse(), 1700);
     return () => window.clearInterval(interval);
   }, [tickPulse]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditable =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable);
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "1") {
+        event.preventDefault();
+        setActiveTab("chat");
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "2") {
+        event.preventDefault();
+        setActiveTab("feed");
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "3") {
+        event.preventDefault();
+        setActiveTab("graph");
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        createNewThread();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void sendCurrentPrompt(event.shiftKey);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        void pickFiles();
+        return;
+      }
+
+      if (!isEditable && event.key === "/") {
+        event.preventDefault();
+        focusComposer();
+        return;
+      }
+
+      if (activeTab !== "chat" || isEditable) {
+        return;
+      }
+
+      const visibleConversations = filteredConversationSections.flatMap((section) => section.items);
+      const currentIndex = visibleConversations.findIndex((item) => item.id === selectedConversationId);
+
+      if (event.key === "j" && currentIndex < visibleConversations.length - 1) {
+        event.preventDefault();
+        setSelectedConversationId(visibleConversations[currentIndex + 1]?.id ?? selectedConversationId);
+      }
+
+      if (event.key === "k" && currentIndex > 0) {
+        event.preventDefault();
+        setSelectedConversationId(visibleConversations[currentIndex - 1]?.id ?? selectedConversationId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    activeTab,
+    createNewThread,
+    filteredConversationSections,
+    focusComposer,
+    pickFiles,
+    selectedConversationId,
+    sendCurrentPrompt
+  ]);
 
   useEffect(() => {
     let unsubscribe = () => {};
@@ -521,11 +664,7 @@ export function App() {
               </div>
               <button
                 className="action-button"
-                onClick={() => {
-                  void window.verbumApp
-                    .spawnConversation({ title: `Side thread ${conversations.length}` })
-                    .then((conversation) => setSelectedConversationId(conversation.id));
-                }}
+                onClick={createNewThread}
                 type="button"
               >
                 New thread
@@ -748,6 +887,9 @@ export function App() {
               >
                 Weekly report
               </button>
+              <button className="chip" onClick={() => void pickFiles()} type="button">
+                Add files
+              </button>
               {demoCommands.map((item) => (
                 <button
                   className="chip"
@@ -773,43 +915,49 @@ export function App() {
                   </option>
                 ))}
               </select>
-              <input onChange={(event) => setComposerValue(event.target.value)} value={composerValue} />
+              <input
+                onChange={(event) => setComposerValue(event.target.value)}
+                ref={composerInputRef}
+                value={composerValue}
+              />
               <button
                 className="composer-context-button"
-                onClick={() => {
-                  const content = composerValue.trim();
-                  if (!content) {
-                    return;
-                  }
-
-                  void window.verbumApp.sendContextPrompt({
-                    routeTo,
-                    prompt: content,
-                    conversationId: selectedConversationId,
-                    lookbackDays: 7
-                  });
-                }}
+                onClick={() => void sendCurrentPrompt(true)}
                 type="button"
               >
                 Send with week
               </button>
               <button
-                onClick={() => {
-                  const content = composerValue.trim();
-                  if (!content) {
-                    return;
-                  }
-
-                  void window.verbumApp.sendMessage({
-                    routeTo,
-                    content,
-                    conversationId: selectedConversationId
-                  });
-                }}
+                onClick={() => void sendCurrentPrompt(false)}
                 type="button"
               >
                 Send
               </button>
+            </div>
+
+            {attachments.length > 0 ? (
+              <div className="attachment-strip">
+                {attachments.map((attachment) => (
+                  <button
+                    className="attachment-chip"
+                    key={attachment.path}
+                    onClick={() =>
+                      setAttachments((current) => current.filter((item) => item.path !== attachment.path))
+                    }
+                    type="button"
+                  >
+                    <span>{attachment.name}</span>
+                    <b>{attachment.kind}</b>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="shortcut-row">
+              <span>`Cmd+Enter` send</span>
+              <span>`Shift+Cmd+Enter` send with week</span>
+              <span>`Cmd+O` add files</span>
+              <span>`/` focus composer</span>
             </div>
 
             <div className="message-feed">

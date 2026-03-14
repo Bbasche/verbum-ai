@@ -10,6 +10,7 @@ import type {
   BridgeSnapshot,
   ConversationSummary,
   ContextPromptRequest,
+  FileAttachment,
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,
@@ -123,6 +124,30 @@ export class BridgeManager extends EventEmitter<{
     };
   }
 
+  readAttachments(filePaths: string[]): FileAttachment[] {
+    return filePaths.flatMap((filePath) => {
+      try {
+        const size = statSync(filePath).size;
+        const kind = isTextLikeFile(filePath) ? "text" : "binary";
+        const preview =
+          kind === "text"
+            ? readFileSync(filePath, "utf8").slice(0, 12000)
+            : undefined;
+
+        return [{
+          path: filePath,
+          name: filePath.split("/").at(-1) ?? filePath,
+          size,
+          mimeType: inferMimeType(filePath),
+          kind,
+          preview
+        }];
+      } catch {
+        return [];
+      }
+    });
+  }
+
   async sendMessage(request: SendMessageRequest): Promise<void> {
     const content = request.content.trim();
     const conversation = this.ensureConversation(request.conversationId, "Master");
@@ -140,10 +165,10 @@ export class BridgeManager extends EventEmitter<{
       role: "user",
       title: "Routed message",
       timestamp: timestamp(),
-      blocks: [{ type: "markdown", text: content }]
+      blocks: buildPromptBlocks(content, request.attachments)
     });
 
-    await this.dispatchRoute(request.routeTo, content, conversation);
+    await this.dispatchRoute(request.routeTo, injectAttachmentsIntoPrompt(content, request.attachments), conversation);
   }
 
   async sendContextPrompt(request: ContextPromptRequest): Promise<void> {
@@ -168,7 +193,7 @@ export class BridgeManager extends EventEmitter<{
       role: "user",
       title: "Cross-thread prompt",
       timestamp: timestamp(),
-      blocks: [{ type: "markdown", text: prompt }]
+      blocks: buildPromptBlocks(prompt, request.attachments)
     });
 
     this.pushMessage({
@@ -208,7 +233,7 @@ export class BridgeManager extends EventEmitter<{
         "Use the Verbum cross-thread context below as authoritative machine history.",
         "Reference concrete accomplishments, loose ends, next steps, and unresolved questions.",
         "",
-        contextPack.content
+        injectAttachmentsIntoPrompt(contextPack.content, request.attachments)
       ].join("\n"),
       conversation
     );
@@ -1595,6 +1620,57 @@ function isoFromMtime(filePath: string): string {
   return mtime > 0 ? new Date(mtime).toISOString() : new Date().toISOString();
 }
 
+function isTextLikeFile(filePath: string): boolean {
+  const extension = filePath.split(".").pop()?.toLowerCase();
+  return new Set([
+    "md",
+    "txt",
+    "json",
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "py",
+    "rb",
+    "go",
+    "rs",
+    "yml",
+    "yaml",
+    "html",
+    "css",
+    "csv",
+    "sh"
+  ]).has(extension ?? "");
+}
+
+function inferMimeType(filePath: string): string {
+  const extension = filePath.split(".").pop()?.toLowerCase();
+  const types: Record<string, string> = {
+    md: "text/markdown",
+    txt: "text/plain",
+    json: "application/json",
+    ts: "text/typescript",
+    tsx: "text/typescript",
+    js: "text/javascript",
+    jsx: "text/javascript",
+    py: "text/x-python",
+    rb: "text/x-ruby",
+    go: "text/x-go",
+    rs: "text/rust",
+    yml: "text/yaml",
+    yaml: "text/yaml",
+    html: "text/html",
+    css: "text/css",
+    csv: "text/csv",
+    pdf: "application/pdf",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg"
+  };
+
+  return types[extension ?? ""] ?? "application/octet-stream";
+}
+
 function codexContentToText(content: unknown): string {
   if (!Array.isArray(content)) {
     return "";
@@ -1660,6 +1736,8 @@ function summarizeBlocks(blocks: MessageBlock[]): string {
           return `${block.name} ${block.status}: ${block.output}`;
         case "status-list":
           return block.items.map((item) => `${item.label} ${item.value}`).join(", ");
+        case "attachment-list":
+          return block.items.map((item) => item.name).join(", ");
         default:
           return "";
       }
@@ -1670,6 +1748,34 @@ function summarizeBlocks(blocks: MessageBlock[]): string {
     .trim();
 
   return parts.length > 220 ? `${parts.slice(0, 217)}...` : parts || "(no content)";
+}
+
+function buildPromptBlocks(prompt: string, attachments?: FileAttachment[]): MessageBlock[] {
+  const blocks: MessageBlock[] = [{ type: "markdown", text: prompt }];
+  if (attachments && attachments.length > 0) {
+    blocks.push({
+      type: "attachment-list",
+      items: attachments
+    });
+  }
+  return blocks;
+}
+
+function injectAttachmentsIntoPrompt(prompt: string, attachments?: FileAttachment[]): string {
+  if (!attachments || attachments.length === 0) {
+    return prompt;
+  }
+
+  const attachmentSections = attachments.map((attachment) => {
+    const header = `Attachment: ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes)`;
+    if (attachment.kind === "text" && attachment.preview) {
+      return [header, "```", attachment.preview, "```"].join("\n");
+    }
+
+    return [header, `Binary file at ${attachment.path}`].join("\n");
+  });
+
+  return [prompt, "", "Attached files:", ...attachmentSections].join("\n\n");
 }
 
 function findExecutable(candidates: string[]): string | null {

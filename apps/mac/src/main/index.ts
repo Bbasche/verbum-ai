@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme } from "electron";
 import { join } from "node:path";
 
 import { BridgeManager } from "./bridge-manager.js";
@@ -43,6 +43,23 @@ app.whenReady().then(() => {
   ipcMain.handle("verbum:get-setup-status", () => bridgeManager.getSetupStatus());
   ipcMain.handle("verbum:send-message", (_event, request) => bridgeManager.sendMessage(request));
   ipcMain.handle("verbum:send-context-prompt", (_event, request) => bridgeManager.sendContextPrompt(request));
+  ipcMain.handle("verbum:pick-files", async () => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const result = await dialog.showOpenDialog(window, {
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        {
+          name: "Documents",
+          extensions: ["md", "txt", "json", "ts", "tsx", "js", "jsx", "py", "rb", "go", "rs", "yml", "yaml", "html", "css", "csv"]
+        },
+        { name: "All files", extensions: ["*"] }
+      ]
+    });
+    if (result.canceled) {
+      return [];
+    }
+    return bridgeManager.readAttachments(result.filePaths);
+  });
   ipcMain.handle("verbum:run-terminal", (_event, request) => bridgeManager.runTerminalCommand(request));
   ipcMain.handle("verbum:run-demo", () => bridgeManager.runLaunchDemo());
   ipcMain.handle("verbum:spawn-conversation", (_event, request) => bridgeManager.spawnConversation(request));
