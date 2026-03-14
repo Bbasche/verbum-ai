@@ -295,6 +295,7 @@ button {
 
 .graph-layout {
   grid-template-columns: minmax(0, 1fr) 320px;
+  overflow: hidden;
 }
 
 .panel {
@@ -1283,6 +1284,7 @@ button {
 
 .graph-workspace {
   padding: 16px;
+  overflow: hidden;
 }
 
 .graph-toolbar-shell {
@@ -1292,6 +1294,37 @@ button {
   border-radius: 999px;
   border: 1px solid var(--border);
   background: rgba(8, 6, 6, 0.46);
+}
+
+.graph-zoom-shell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(8, 6, 6, 0.46);
+}
+
+.graph-zoom-button {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.74rem;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.graph-zoom-button:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-strong);
+}
+
+.graph-zoom-value {
+  min-width: 64px;
+  color: #f0bf75;
 }
 
 .graph-toggle {
@@ -1310,7 +1343,7 @@ button {
 
 .graph-stage {
   position: relative;
-  min-height: 560px;
+  min-height: clamp(360px, 55vh, 490px);
   flex: 1;
   overflow: hidden;
   border-radius: var(--radius-xl);
@@ -1323,7 +1356,14 @@ button {
 
 .graph-stage-inner {
   position: absolute;
-  inset: 6% 16%;
+  inset: 3.5% 7%;
+}
+
+.graph-viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  transition: transform 180ms ease;
 }
 
 .graph-grid,
@@ -1399,9 +1439,9 @@ button {
   position: absolute;
   z-index: 3;
   width: max-content;
-  min-width: 96px;
-  max-width: 118px;
-  padding: 9px 10px;
+  min-width: 90px;
+  max-width: 110px;
+  padding: 8px 9px;
   transform: translate(-50%, -50%);
   border-radius: 16px;
   border: 1px solid rgba(248, 243, 235, 0.1);
@@ -1474,22 +1514,40 @@ button {
 }
 
 .graph-node-core {
-  min-width: 122px;
-  max-width: 136px;
+  min-width: 116px;
+  max-width: 128px;
 }
 
 .graph-node-compact {
-  min-width: 82px;
-  max-width: 98px;
+  min-width: 76px;
+  max-width: 92px;
 }
 
 .graph-node-thread {
-  min-width: 88px;
-  max-width: 108px;
+  min-width: 78px;
+  max-width: 94px;
   border-color: rgba(248, 243, 235, 0.12);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
     rgba(18, 13, 11, 0.92);
+}
+
+.graph-node-thread .graph-node-topline strong {
+  font-size: 0.68rem;
+}
+
+.graph-node-thread .graph-node-kind {
+  font-size: 0.55rem;
+}
+
+.graph-node-thread .graph-node-stats {
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.graph-node-thread .graph-node-stats b,
+.graph-node-thread .graph-node-stats span {
+  font-size: 0.54rem;
 }
 
 .graph-node-orchestrator {
@@ -1550,6 +1608,10 @@ button {
 .node-activity {
   display: grid;
   gap: 10px;
+}
+
+.graph-inspector {
+  overflow-y: auto;
 }
 
 .node-activity-item p {
@@ -1685,7 +1747,7 @@ button {
   }
 
   .graph-stage-inner {
-    inset: 6% 12%;
+    inset: 3.5% 5%;
   }
 
   .thread-summary-row {
@@ -1712,11 +1774,11 @@ button {
   }
 
   .graph-stage {
-    min-height: 620px;
+    min-height: 500px;
   }
 
   .graph-stage-inner {
-    inset: 5% 8%;
+    inset: 4% 4%;
   }
 }
 

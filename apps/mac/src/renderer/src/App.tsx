@@ -322,6 +322,7 @@ export function App() {
   const [pulseIndex, setPulseIndex] = useState(0);
   const [routeTo, setRouteTo] = useState("master-agent");
   const [graphFocus, setGraphFocus] = useState<GraphFocus>("selected");
+  const [graphZoom, setGraphZoom] = useState(0.86);
   const [threadFilter, setThreadFilter] = useState<ThreadFilter>("all");
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
@@ -620,6 +621,14 @@ export function App() {
     setPulseIndex((current) => (current + 1) % Math.max(1, graphEdgesLive.length));
   });
 
+  const adjustGraphZoom = useEffectEvent((delta: number) => {
+    setGraphZoom((current) => Math.min(1.35, Math.max(0.62, Number((current + delta).toFixed(2)))));
+  });
+
+  const resetGraphZoom = useEffectEvent(() => {
+    setGraphZoom(0.86);
+  });
+
   const focusComposer = useEffectEvent(() => {
     if (activeTab !== "chat") {
       setActiveTab("chat");
@@ -708,6 +717,24 @@ export function App() {
         return;
       }
 
+      if ((event.metaKey || event.ctrlKey) && event.key === "0") {
+        event.preventDefault();
+        resetGraphZoom();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && (event.key === "=" || event.key === "+")) {
+        event.preventDefault();
+        adjustGraphZoom(0.08);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "-") {
+        event.preventDefault();
+        adjustGraphZoom(-0.08);
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
         event.preventDefault();
         createNewThread();
@@ -755,9 +782,11 @@ export function App() {
   }, [
     activeTab,
     createNewThread,
+    adjustGraphZoom,
     filteredConversationSections,
     focusComposer,
     pickFiles,
+    resetGraphZoom,
     selectedConversationId,
     sendCurrentPrompt
   ]);
@@ -1405,6 +1434,17 @@ export function App() {
                   </button>
                 ))}
               </div>
+              <div className="graph-zoom-shell">
+                <button className="graph-zoom-button" onClick={() => adjustGraphZoom(-0.08)} type="button">
+                  -
+                </button>
+                <button className="graph-zoom-button graph-zoom-value" onClick={resetGraphZoom} type="button">
+                  {Math.round(graphZoom * 100)}%
+                </button>
+                <button className="graph-zoom-button" onClick={() => adjustGraphZoom(0.08)} type="button">
+                  +
+                </button>
+              </div>
             </div>
 
             <div className="graph-summary-grid">
@@ -1432,7 +1472,21 @@ export function App() {
             </div>
 
             <div className="graph-stage graph-stage-clean">
-              <div className="graph-stage-inner">
+              <div
+                className="graph-stage-inner"
+                onWheel={(event) => {
+                  if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault();
+                    adjustGraphZoom(event.deltaY > 0 ? -0.04 : 0.04);
+                  }
+                }}
+              >
+                <div
+                  className="graph-viewport"
+                  style={{
+                    transform: `scale(${graphZoom})`
+                  }}
+                >
                 <div className="graph-grid" aria-hidden></div>
                 <div className="graph-orbit graph-orbit-a" aria-hidden></div>
                 <div className="graph-orbit graph-orbit-b" aria-hidden></div>
@@ -1524,6 +1578,7 @@ export function App() {
                     </div>
                   </button>
                 ))}
+                </div>
               </div>
             </div>
           </section>
