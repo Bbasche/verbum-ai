@@ -13,7 +13,7 @@ import type {
 
 contextBridge.exposeInMainWorld("verbumApp", {
   platform: process.platform,
-  version: "0.1.5",
+  version: "0.1.6",
   getSnapshot: () => ipcRenderer.invoke("verbum:get-snapshot") as Promise<BridgeSnapshot>,
   sendMessage: (request: SendMessageRequest) => ipcRenderer.invoke("verbum:send-message", request),
   sendContextPrompt: (request: ContextPromptRequest) =>

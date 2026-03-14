@@ -334,6 +334,13 @@ button {
   gap: 16px;
 }
 
+.panel-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1787,6 +1794,10 @@ button {
 
   .mode-tabs {
     overflow-x: auto;
+  }
+
+  .panel-head-actions {
+    justify-content: flex-start;
   }
 
   .graph-stage {

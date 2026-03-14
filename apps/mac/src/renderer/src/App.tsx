@@ -24,6 +24,7 @@ type SearchCitation = (typeof searchDocuments)[number];
 type AppTab = "chat" | "feed" | "graph";
 type GraphFocus = "all" | "selected" | "live";
 type ThreadFilter = "all" | "verbum" | "claude-code" | "codex" | "terminal";
+type ActivityWindow = "15m" | "1h" | "24h" | "7d" | "all";
 type GraphNodeType = "router" | "model" | "terminal" | "memory" | "human" | "custom" | "orchestrator" | "thread";
 
 interface GraphNodeRecord {
@@ -313,6 +314,51 @@ function previewMessage(message: AppMessage | undefined): string {
   return text.length > 96 ? `${text.slice(0, 93)}...` : text;
 }
 
+function activityWindowLabel(value: ActivityWindow): string {
+  switch (value) {
+    case "15m":
+      return "15m";
+    case "1h":
+      return "1h";
+    case "24h":
+      return "24h";
+    case "7d":
+      return "7d";
+    default:
+      return "All";
+  }
+}
+
+function activityWindowDescription(value: ActivityWindow): string {
+  switch (value) {
+    case "15m":
+      return "Last 15 minutes";
+    case "1h":
+      return "Last hour";
+    case "24h":
+      return "Last 24 hours";
+    case "7d":
+      return "Last 7 days";
+    default:
+      return "All captured messages";
+  }
+}
+
+function activityWindowMs(value: ActivityWindow): number | null {
+  switch (value) {
+    case "15m":
+      return 15 * 60 * 1000;
+    case "1h":
+      return 60 * 60 * 1000;
+    case "24h":
+      return 24 * 60 * 60 * 1000;
+    case "7d":
+      return 7 * 24 * 60 * 60 * 1000;
+    default:
+      return null;
+  }
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("chat");
   const [selectedId, setSelectedId] = useState("master-agent");
@@ -323,6 +369,7 @@ export function App() {
   const [routeTo, setRouteTo] = useState("master-agent");
   const [graphFocus, setGraphFocus] = useState<GraphFocus>("selected");
   const [graphZoom, setGraphZoom] = useState(0.86);
+  const [activityWindow, setActivityWindow] = useState<ActivityWindow>("1h");
   const [threadFilter, setThreadFilter] = useState<ThreadFilter>("all");
   const [composerValue, setComposerValue] = useState(
     "Summarize the latest build result and route the fix to Claude Code."
@@ -355,8 +402,17 @@ export function App() {
   const conversationRecencyRank = new Map<string, number>();
   const focusedNodeId = hoveredNodeId ?? selectedId;
   const needsSetup = !setupStatus?.packageInstalled || !setupStatus?.serviceInstalled || !setupStatus?.serviceRunning;
+  const activityWindowCutoff = activityWindowMs(activityWindow);
+  const filteredMessages = allMessages.filter((message) => {
+    if (activityWindowCutoff === null) {
+      return true;
+    }
 
-  allMessages.forEach((message, index) => {
+    const createdAt = message.createdAt ? new Date(message.createdAt).getTime() : Number.NaN;
+    return Number.isFinite(createdAt) && createdAt >= Date.now() - activityWindowCutoff;
+  });
+
+  filteredMessages.forEach((message, index) => {
     messageCountBySource.set(message.sourceId, (messageCountBySource.get(message.sourceId) ?? 0) + 1);
     const conversationIds = threadCountBySource.get(message.sourceId) ?? new Set<string>();
     conversationIds.add(message.conversationId);
@@ -392,7 +448,7 @@ export function App() {
     (message) => message.conversationId === selectedConversationId
   );
   const messagesByConversation = new Map<string, AppMessage[]>();
-  for (const message of allMessages) {
+  for (const message of filteredMessages) {
     const bucket = messagesByConversation.get(message.conversationId) ?? [];
     bucket.push(message);
     messagesByConversation.set(message.conversationId, bucket);
@@ -435,7 +491,7 @@ export function App() {
       )
     }))
     .filter((section) => section.items.length > 0);
-  const globalMessages = [...allMessages].reverse();
+  const globalMessages = [...filteredMessages].reverse();
   const activeTabCopy = tabCopy[activeTab];
 
   const recentGraphConversations = sortConversations(conversations).slice(0, 14);
@@ -597,6 +653,7 @@ export function App() {
     ).values()
   ];
   const threadFilterOptions: ThreadFilter[] = ["all", "verbum", "claude-code", "codex", "terminal"];
+  const activityWindowOptions: ActivityWindow[] = ["15m", "1h", "24h", "7d", "all"];
   const liveMatches = [...searchDocuments]
     .map((document) => ({ document, score: scoreDocument(deferredQuery, document) }))
     .sort((left, right) => right.score - left.score)
@@ -864,8 +921,8 @@ export function App() {
             <strong>{sources.filter((source) => source.connected).length}</strong>
           </article>
           <article className="metric-card">
-            <span>Messages</span>
-            <strong>{allMessages.length}</strong>
+            <span>Msgs {activityWindowLabel(activityWindow)}</span>
+            <strong>{filteredMessages.length}</strong>
           </article>
           <article className="metric-card">
             <span>Build</span>
@@ -1337,7 +1394,21 @@ export function App() {
                 <h2>Global activity</h2>
                 <p>Messages and events in one live stream.</p>
               </div>
-              <span className="status-pill">{globalMessages.length} total messages</span>
+              <div className="panel-head-actions">
+                <div className="graph-toolbar-shell">
+                  {activityWindowOptions.map((value) => (
+                    <button
+                      className={activityWindow === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
+                      key={value}
+                      onClick={() => setActivityWindow(value)}
+                      type="button"
+                    >
+                      {activityWindowLabel(value)}
+                    </button>
+                  ))}
+                </div>
+                <span className="status-pill">{filteredMessages.length} msgs · {activityWindowDescription(activityWindow)}</span>
+              </div>
             </div>
 
             <div className="feed-activity-grid">
@@ -1352,12 +1423,12 @@ export function App() {
               <article className="graph-summary-card">
                 <span>Bus events</span>
                 <strong>{busEvents.length}</strong>
-                <p>Included in the live stream.</p>
+                <p>Latest app events.</p>
               </article>
               <article className="graph-summary-card">
                 <span>Connected sources</span>
                 <strong>{sources.filter((source) => source.connected).length}</strong>
-                <p>Visible participants contributing to the feed.</p>
+                <p>{activityWindowDescription(activityWindow)}</p>
               </article>
             </div>
 
@@ -1402,32 +1473,46 @@ export function App() {
                 <h2>Graph</h2>
                 <p>Sources, threads, and connections.</p>
               </div>
-              <div className="graph-toolbar-shell">
-                {([
-                  ["selected", "Selected"],
-                  ["live", "Live"],
-                  ["all", "All"]
-                ] as const).map(([value, label]) => (
-                  <button
-                    className={graphFocus === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
-                    key={value}
-                    onClick={() => setGraphFocus(value)}
-                    type="button"
-                  >
-                    {label}
+              <div className="panel-head-actions">
+                <div className="graph-toolbar-shell">
+                  {activityWindowOptions.map((value) => (
+                    <button
+                      className={activityWindow === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
+                      key={value}
+                      onClick={() => setActivityWindow(value)}
+                      type="button"
+                    >
+                      {activityWindowLabel(value)}
+                    </button>
+                  ))}
+                </div>
+                <div className="graph-toolbar-shell">
+                  {([
+                    ["selected", "Selected"],
+                    ["live", "Live"],
+                    ["all", "All"]
+                  ] as const).map(([value, label]) => (
+                    <button
+                      className={graphFocus === value ? "graph-toggle graph-toggle-active" : "graph-toggle"}
+                      key={value}
+                      onClick={() => setGraphFocus(value)}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="graph-zoom-shell">
+                  <button className="graph-zoom-button" onClick={() => adjustGraphZoom(-0.08)} type="button">
+                    -
                   </button>
-                ))}
-              </div>
-              <div className="graph-zoom-shell">
-                <button className="graph-zoom-button" onClick={() => adjustGraphZoom(-0.08)} type="button">
-                  -
-                </button>
-                <button className="graph-zoom-button graph-zoom-value" onClick={resetGraphZoom} type="button">
-                  {Math.round(graphZoom * 100)}%
-                </button>
-                <button className="graph-zoom-button" onClick={() => adjustGraphZoom(0.08)} type="button">
-                  +
-                </button>
+                  <button className="graph-zoom-button graph-zoom-value" onClick={resetGraphZoom} type="button">
+                    {Math.round(graphZoom * 100)}%
+                  </button>
+                  <button className="graph-zoom-button" onClick={() => adjustGraphZoom(0.08)} type="button">
+                    +
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1443,7 +1528,7 @@ export function App() {
               <article className="graph-summary-card">
                 <span>Visible flows</span>
                 <strong>{visibleFlows.length}</strong>
-                <p>{graphFocus === "all" ? "Whole topology" : "Filtered graph view"}</p>
+                <p>{graphFocus === "all" ? activityWindowDescription(activityWindow) : "Filtered graph view"}</p>
               </article>
               <article className="graph-summary-card">
                 <span>Active edge</span>
