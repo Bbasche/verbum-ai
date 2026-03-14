@@ -43,6 +43,9 @@ app.whenReady().then(() => {
   ipcMain.handle("verbum:get-setup-status", () => bridgeManager.getSetupStatus());
   ipcMain.handle("verbum:send-message", (_event, request) => bridgeManager.sendMessage(request));
   ipcMain.handle("verbum:send-context-prompt", (_event, request) => bridgeManager.sendContextPrompt(request));
+  ipcMain.handle("verbum:set-master-agent-backend", (_event, request) =>
+    bridgeManager.setMasterAgentBackend(request)
+  );
   ipcMain.handle("verbum:pick-files", async () => {
     const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     const result = await dialog.showOpenDialog(window, {

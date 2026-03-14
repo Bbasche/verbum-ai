@@ -7,13 +7,14 @@ import {
   useState
 } from "react";
 
-import { graphEdges, graphNodes, searchDocuments } from "./demo-data";
+import { searchDocuments } from "./demo-data";
 import { MessageRenderer } from "./MessageRenderer";
 import type {
   AppMessage,
   BridgeSnapshot,
   ConversationSummary,
   FileAttachment,
+  MasterAgentBackend,
   SetupStatus,
   SourceDescriptor
 } from "./message-schema";
@@ -23,11 +24,98 @@ type SearchCitation = (typeof searchDocuments)[number];
 type AppTab = "chat" | "feed" | "graph";
 type GraphFocus = "all" | "selected" | "live";
 type ThreadFilter = "all" | "verbum" | "claude-code" | "codex" | "terminal";
+type GraphNodeType = "router" | "model" | "terminal" | "memory" | "human" | "custom" | "orchestrator" | "thread";
+
+interface GraphNodeRecord {
+  id: string;
+  label: string;
+  type: GraphNodeType;
+  detail: string;
+  x: number;
+  y: number;
+  parentId?: string;
+  conversationId?: string;
+  sourceId?: string;
+}
+
+interface GraphEdgeRecord {
+  from: string;
+  to: string;
+  label: string;
+}
+
+const graphAnchors: GraphNodeRecord[] = [
+  {
+    id: "master-agent",
+    label: "Master Agent",
+    type: "orchestrator",
+    x: 50,
+    y: 14,
+    detail: "Synthesizes work across threads, answers directly, and decides when to delegate."
+  },
+  {
+    id: "verbum-app",
+    label: "Verbum App",
+    type: "router",
+    x: 50,
+    y: 38,
+    detail: "The local control plane. It watches sources, stores typed messages, and keeps routing visible."
+  },
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    type: "model",
+    x: 18,
+    y: 26,
+    detail: "Imported Claude task threads and direct prompt runs from the local CLI."
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    type: "model",
+    x: 82,
+    y: 26,
+    detail: "Imported Codex desktop sessions plus direct non-interactive exec runs."
+  },
+  {
+    id: "terminals",
+    label: "Terminals",
+    type: "terminal",
+    x: 50,
+    y: 74,
+    detail: "Machine terminals represented as their own conversational participants."
+  },
+  {
+    id: "inbox",
+    label: "Human input",
+    type: "human",
+    x: 18,
+    y: 52,
+    detail: "Messages from the human operator and explicit routing decisions."
+  },
+  {
+    id: "search",
+    label: "Search",
+    type: "memory",
+    x: 82,
+    y: 52,
+    detail: "Conversational retrieval over docs, traces, and the machine's recent history."
+  }
+];
+
+const graphBaseEdges: GraphEdgeRecord[] = [
+  { from: "master-agent", to: "verbum-app", label: "plans + synthesis" },
+  { from: "claude-code", to: "verbum-app", label: "Claude stream" },
+  { from: "codex", to: "verbum-app", label: "Codex stream" },
+  { from: "terminals", to: "verbum-app", label: "shell activity" },
+  { from: "inbox", to: "master-agent", label: "operator prompt" },
+  { from: "search", to: "master-agent", label: "retrieval context" }
+];
 
 const tabCopy: Record<AppTab, { title: string; description: string }> = {
   chat: {
-    title: "Conversations across your machine, in one place.",
-    description: "Send prompts, review replies, and keep source context close at hand."
+    title: "One operator thread, backed by the whole machine.",
+    description: "Use the master agent, inspect imported Claude and Codex sessions, and keep live source context close."
   },
   feed: {
     title: "Live activity from every connected source.",
@@ -78,9 +166,11 @@ function titleCase(value: string): string {
 }
 
 function graphCategoryLabel(
-  kind: SourceDescriptor["kind"] | (typeof graphNodes)[number]["type"] | undefined
+  kind: SourceDescriptor["kind"] | GraphNodeType | undefined
 ): string {
   switch (kind) {
+    case "orchestrator":
+      return "Master";
     case "claude-code":
       return "Claude";
     case "codex":
@@ -97,6 +187,8 @@ function graphCategoryLabel(
       return "App";
     case "model":
       return "Model";
+    case "thread":
+      return "Thread";
     default:
       return kind ? titleCase(kind) : "Source";
   }
@@ -105,10 +197,18 @@ function graphCategoryLabel(
 function graphNodeLabel(
   nodeId: string,
   source: SourceDescriptor | undefined,
-  fallbackType: SourceDescriptor["kind"] | (typeof graphNodes)[number]["type"]
+  fallbackType: SourceDescriptor["kind"] | GraphNodeType
 ): string {
+  if (nodeId === "master-agent") {
+    return "Master agent";
+  }
+
   if (nodeId === "verbum-app") {
     return "Control room";
+  }
+
+  if (nodeId === "terminals") {
+    return "Terminals";
   }
 
   if (nodeId === "shell-1") {
@@ -124,6 +224,29 @@ function graphNodeLabel(
   }
 
   return graphCategoryLabel(source?.kind ?? fallbackType);
+}
+
+function graphConversationParent(
+  conversation: ConversationSummary,
+  messages: AppMessage[]
+): "master-agent" | "claude-code" | "codex" | "terminals" {
+  if (conversation.kind === "master" || conversation.kind === "side") {
+    return "master-agent";
+  }
+
+  if (conversation.sourceId === "claude-code") {
+    return "claude-code";
+  }
+
+  if (conversation.sourceId === "codex") {
+    return "codex";
+  }
+
+  if (messages.some((message) => message.sourceKind === "terminal")) {
+    return "terminals";
+  }
+
+  return "master-agent";
 }
 
 function threadFilterLabel(value: ThreadFilter): string {
@@ -192,12 +315,12 @@ function previewMessage(message: AppMessage | undefined): string {
 
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("chat");
-  const [selectedId, setSelectedId] = useState("verbum-app");
+  const [selectedId, setSelectedId] = useState("master-agent");
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState("master");
   const [query, setQuery] = useState("How does Verbum orchestrate Claude Code, Codex, and terminals?");
   const [pulseIndex, setPulseIndex] = useState(0);
-  const [routeTo, setRouteTo] = useState("claude-code");
+  const [routeTo, setRouteTo] = useState("master-agent");
   const [graphFocus, setGraphFocus] = useState<GraphFocus>("selected");
   const [threadFilter, setThreadFilter] = useState<ThreadFilter>("all");
   const [composerValue, setComposerValue] = useState(
@@ -218,6 +341,7 @@ export function App() {
   const deferredQuery = useDeferredValue(query);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
   const sources = snapshot?.sources ?? [];
+  const masterAgent = snapshot?.masterAgent;
   const conversations = snapshot?.conversations ?? [];
   const allMessages = snapshot?.messages ?? [];
   const busEvents = snapshot?.busEvents ?? ["Verbum App is booting..."];
@@ -272,6 +396,18 @@ export function App() {
     bucket.push(message);
     messagesByConversation.set(message.conversationId, bucket);
   }
+  const importedGroups = [...new Map(
+    conversations
+      .filter((conversation) => conversation.kind === "imported")
+      .map((conversation) => [conversation.sourceId ?? "imported", conversation.sourceLabel ?? "Imported"])
+  ).entries()].map(([sourceId, label]) => ({
+    key: `imported-${sourceId}`,
+    label,
+    items: sortConversations(
+      conversations.filter((conversation) => conversation.kind === "imported" && (conversation.sourceId ?? "imported") === sourceId)
+    )
+  }));
+
   const conversationSections = [
     {
       key: "master",
@@ -283,11 +419,7 @@ export function App() {
       label: "Side Threads",
       items: sortConversations(conversations.filter((conversation) => conversation.kind === "side"))
     },
-    {
-      key: "imported",
-      label: "Imported",
-      items: sortConversations(conversations.filter((conversation) => conversation.kind === "imported"))
-    }
+    ...importedGroups
   ].filter((section) => section.items.length > 0);
   const filteredConversationSections = conversationSections
     .map((section) => ({
@@ -303,19 +435,93 @@ export function App() {
     }))
     .filter((section) => section.items.length > 0);
   const globalMessages = [...allMessages].reverse();
-  const activeEdge = graphEdges[pulseIndex] ?? graphEdges[0];
+  const activeTabCopy = tabCopy[activeTab];
 
-  const graphDescriptors = graphNodes.map((node) => {
-    const source = sourceById.get(node.id);
+  const recentGraphConversations = sortConversations(conversations).slice(0, 14);
+  const childOffsetsByParent: Record<string, Array<{ x: number; y: number }>> = {
+    "master-agent": [
+      { x: -18, y: 13 },
+      { x: 0, y: 14 },
+      { x: 18, y: 13 },
+      { x: -12, y: 23 },
+      { x: 12, y: 23 }
+    ],
+    "claude-code": [
+      { x: 11, y: 10 },
+      { x: 15, y: 0 },
+      { x: 10, y: -10 },
+      { x: 25, y: 6 }
+    ],
+    codex: [
+      { x: -11, y: 10 },
+      { x: -15, y: 0 },
+      { x: -10, y: -10 },
+      { x: -25, y: 6 }
+    ],
+    terminals: [
+      { x: -14, y: 10 },
+      { x: 14, y: 10 },
+      { x: -24, y: -2 },
+      { x: 24, y: -2 }
+    ]
+  };
+  const childCounts = new Map<string, number>();
+  const graphThreadNodes: GraphNodeRecord[] = recentGraphConversations.map((conversation) => {
+    const parentId = graphConversationParent(conversation, messagesByConversation.get(conversation.id) ?? []);
+    const parent = graphAnchors.find((node) => node.id === parentId) ?? graphAnchors[0];
+    const offsetIndex = childCounts.get(parentId) ?? 0;
+    const offset = childOffsetsByParent[parentId][offsetIndex % childOffsetsByParent[parentId].length] ?? { x: 0, y: 0 };
+    childCounts.set(parentId, offsetIndex + 1);
+    const latestMessage = (messagesByConversation.get(conversation.id) ?? [])[0];
+
+    return {
+      id: `thread:${conversation.id}`,
+      label: conversation.title,
+      type: "thread",
+      parentId,
+      conversationId: conversation.id,
+      sourceId: conversation.sourceId,
+      x: parent.x + offset.x,
+      y: parent.y + offset.y,
+      detail:
+        latestMessage
+          ? previewMessage(latestMessage)
+          : `${conversation.sourceLabel ?? "Verbum"} thread`
+    };
+  });
+  const graphNodesLive = [...graphAnchors, ...graphThreadNodes];
+  const graphEdgesLive: GraphEdgeRecord[] = [
+    ...graphBaseEdges,
+    ...graphThreadNodes.map((node) => ({
+      from: node.parentId ?? "verbum-app",
+      to: node.id,
+      label: node.parentId === "master-agent" ? "active thread" : "imported thread"
+    }))
+  ];
+  const activeEdge = graphEdgesLive[pulseIndex % graphEdgesLive.length] ?? graphEdgesLive[0];
+
+  const graphDescriptors = graphNodesLive.map((node) => {
+    const source = node.sourceId ? sourceById.get(node.sourceId) : sourceById.get(node.id);
     const terminal = terminalById.get(node.id);
-    const messageCount = messageCountBySource.get(node.id) ?? 0;
-    const threadCount = threadCountBySource.get(node.id)?.size ?? 0;
-    const inbound = graphEdges.filter((edge) => edge.to === node.id).length;
-    const outbound = graphEdges.filter((edge) => edge.from === node.id).length;
+    const nodeMessageCount =
+      node.conversationId
+        ? (messagesByConversation.get(node.conversationId) ?? []).length
+        : messageCountBySource.get(node.id) ?? 0;
+    const nodeThreadCount =
+      node.type === "thread"
+        ? 1
+        : node.id === "terminals"
+          ? 2
+          : threadCountBySource.get(node.id)?.size ?? graphThreadNodes.filter((child) => child.parentId === node.id).length;
+    const inbound = graphEdgesLive.filter((edge) => edge.to === node.id).length;
+    const outbound = graphEdgesLive.filter((edge) => edge.from === node.id).length;
     const connected = source
       ? source.connected
-      : node.id === "verbum-app" || node.id === "search" || node.id === "inbox";
-    const status = source?.status ?? (terminal?.lastCommand ? "busy" : connected ? "ready" : "idle");
+      : node.id === "verbum-app" || node.id === "search" || node.id === "inbox" || node.id === "master-agent" || node.id === "terminals";
+    const status =
+      node.type === "thread"
+        ? (messagesByConversation.get(node.conversationId ?? "")?.[0]?.timestamp ?? "recent")
+        : source?.status ?? (terminal?.lastCommand ? "busy" : connected ? "ready" : "idle");
 
     return {
       ...node,
@@ -323,8 +529,8 @@ export function App() {
       connected,
       status,
       category: graphNodeLabel(node.id, source, node.type),
-      messageCount,
-      threadCount,
+      messageCount: nodeMessageCount,
+      threadCount: nodeThreadCount,
       inbound,
       outbound
     };
@@ -335,11 +541,12 @@ export function App() {
   const focusedDescriptor =
     graphDescriptors.find((descriptor) => descriptor.id === focusedNodeId) ?? selectedDescriptor;
 
-  const relatedFlows = graphEdges.map((edge, index) => {
+  const relatedFlows = graphEdgesLive.map((edge, index) => {
     const traffic =
-      (messageCountBySource.get(edge.from) ?? 0) + (messageCountBySource.get(edge.to) ?? 0);
-    const fromLabel = graphNodes.find((node) => node.id === edge.from)?.label ?? edge.from;
-    const toLabel = graphNodes.find((node) => node.id === edge.to)?.label ?? edge.to;
+      (graphDescriptors.find((node) => node.id === edge.from)?.messageCount ?? 0) +
+      (graphDescriptors.find((node) => node.id === edge.to)?.messageCount ?? 0);
+    const fromLabel = graphNodesLive.find((node) => node.id === edge.from)?.label ?? edge.from;
+    const toLabel = graphNodesLive.find((node) => node.id === edge.to)?.label ?? edge.to;
 
     return {
       ...edge,
@@ -369,10 +576,11 @@ export function App() {
     visibleNodeIds.add(flow.to);
   }
 
-  const selectedNodeMessages = allMessages
-    .filter((message) => message.sourceId === selectedId)
-    .slice(-3)
-    .reverse();
+  const selectedNodeMessages = selectedDescriptor?.conversationId
+    ? (messagesByConversation.get(selectedDescriptor.conversationId) ?? []).slice(0, 4)
+    : allMessages
+        .filter((message) => message.sourceId === selectedId)
+        .slice(0, 4);
   const selectedConversationMessages = messagesByConversation.get(selectedConversationId) ?? [];
   const selectedConversationLatest = selectedConversationMessages[0];
   const selectedConversationSources = [
@@ -388,12 +596,10 @@ export function App() {
     ).values()
   ];
   const threadFilterOptions: ThreadFilter[] = ["all", "verbum", "claude-code", "codex", "terminal"];
-
   const liveMatches = [...searchDocuments]
     .map((document) => ({ document, score: scoreDocument(deferredQuery, document) }))
     .sort((left, right) => right.score - left.score)
     .slice(0, 4);
-  const activeTabCopy = tabCopy[activeTab];
 
   const tickerItems = [
     ...busEvents.slice(-8).map((event) => ({
@@ -411,7 +617,7 @@ export function App() {
   ];
 
   const tickPulse = useEffectEvent(() => {
-    setPulseIndex((current) => (current + 1) % graphEdges.length);
+    setPulseIndex((current) => (current + 1) % Math.max(1, graphEdgesLive.length));
   });
 
   const focusComposer = useEffectEvent(() => {
@@ -585,6 +791,7 @@ export function App() {
 
     if (!snapshot.sources.some((source) => source.id === routeTo)) {
       const preferredRoute =
+        snapshot.sources.find((source) => source.id === "master-agent")?.id ??
         snapshot.sources.find((source) => source.id === "claude-code" || source.id === "codex")?.id ??
         snapshot.sources[0]?.id;
       if (preferredRoute) {
@@ -614,7 +821,9 @@ export function App() {
           <div className="header-chips">
             <span className="header-chip">{selectedConversation?.title ?? "Master conversation"}</span>
             <span className="header-chip">Route {selectedSource.name}</span>
-            <span className="header-chip">Active {activeEdge.label}</span>
+            <span className="header-chip">
+              Master {masterAgent ? `${masterAgent.backendLabel} · ${masterAgent.modelLabel}` : "loading"}
+            </span>
           </div>
         </div>
         <div className="topbar-metrics">
@@ -631,8 +840,8 @@ export function App() {
             <strong>{allMessages.length}</strong>
           </article>
           <article className="metric-card">
-            <span>Focus</span>
-            <strong>{titleCase(activeTab)}</strong>
+            <span>Build</span>
+            <strong>{snapshot?.version ?? window.verbumApp.version}</strong>
           </article>
         </div>
       </header>
@@ -866,6 +1075,40 @@ export function App() {
                   <strong>{selectedConversationSources.length || 1}</strong>
                 </article>
               </div>
+
+              {selectedConversation?.kind === "master" && masterAgent ? (
+                <div className="master-agent-bar">
+                  <div className="master-agent-copy">
+                    <span className="eyebrow">Master Agent</span>
+                    <p>
+                      The main operator thread should synthesize the week, track loose ends, and decide when to hand work to Claude, Codex, or terminals.
+                    </p>
+                  </div>
+                  <div className="master-agent-controls">
+                    <label className="master-agent-select">
+                      <span>Backend</span>
+                      <select
+                        onChange={(event) =>
+                          void window.verbumApp.setMasterAgentBackend({
+                            backend: event.target.value as MasterAgentBackend
+                          })
+                        }
+                        value={masterAgent.backend}
+                      >
+                        <option value="claude-code">Claude</option>
+                        <option value="codex">Codex</option>
+                      </select>
+                    </label>
+                    <div className="master-agent-chips">
+                      {masterAgent.responsibilities.map((item) => (
+                        <span className="chip" key={item}>
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
 
             <div className="demo-toolbar">
@@ -1074,8 +1317,8 @@ export function App() {
                 <span>Latest path</span>
                 <strong>{activeEdge.label}</strong>
                 <p>
-                  {graphNodes.find((node) => node.id === activeEdge.from)?.label} to{" "}
-                  {graphNodes.find((node) => node.id === activeEdge.to)?.label}
+                  {graphNodesLive.find((node) => node.id === activeEdge.from)?.label} to{" "}
+                  {graphNodesLive.find((node) => node.id === activeEdge.to)?.label}
                 </p>
               </article>
               <article className="graph-summary-card">
@@ -1182,8 +1425,8 @@ export function App() {
                 <span>Active edge</span>
                 <strong>{activeEdge.label}</strong>
                 <p>
-                  {graphNodes.find((node) => node.id === activeEdge.from)?.label} to{" "}
-                  {graphNodes.find((node) => node.id === activeEdge.to)?.label}
+                  {graphNodesLive.find((node) => node.id === activeEdge.from)?.label} to{" "}
+                  {graphNodesLive.find((node) => node.id === activeEdge.to)?.label}
                 </p>
               </article>
             </div>
@@ -1203,8 +1446,8 @@ export function App() {
 
                 <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
                   {relatedFlows.map((edge, index) => {
-                    const from = graphNodes.find((node) => node.id === edge.from);
-                    const to = graphNodes.find((node) => node.id === edge.to);
+                    const from = graphNodesLive.find((node) => node.id === edge.from);
+                    const to = graphNodesLive.find((node) => node.id === edge.to);
 
                     if (!from || !to || !visibleFlows.some((flow) => flow.from === edge.from && flow.to === edge.to)) {
                       return null;
@@ -1247,11 +1490,18 @@ export function App() {
                     } ${!visibleNodeIds.has(node.id) ? "graph-node-muted" : ""} ${
                       node.id === "verbum-app" ? "graph-node-core" : ""
                     } ${
-                      node.type === "memory" || node.type === "human" ? "graph-node-compact" : ""
+                      node.type === "memory" || node.type === "human" || node.type === "thread"
+                        ? "graph-node-compact"
+                        : ""
                     }`}
                     data-node-id={node.id}
                     key={node.id}
-                    onClick={() => setSelectedId(node.id)}
+                    onClick={() => {
+                      setSelectedId(node.id);
+                      if (node.conversationId) {
+                        setSelectedConversationId(node.conversationId);
+                      }
+                    }}
                     onMouseEnter={() => setHoveredNodeId(node.id)}
                     onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
                     style={{
@@ -1265,15 +1515,15 @@ export function App() {
                       <strong>{node.label}</strong>
                       <span className={`status-dot ${node.connected ? "status-dot-online" : "status-dot-idle"}`}></span>
                     </div>
-                  <span className="graph-node-kind">{node.category}</span>
-                  <div className="graph-node-stats">
-                    <b>{node.messageCount}</b>
-                    <span>
-                      {node.threadCount || 1} {node.threadCount === 1 ? "thread" : "threads"}
-                    </span>
-                  </div>
-                </button>
-              ))}
+                    <span className="graph-node-kind">{node.category}</span>
+                    <div className="graph-node-stats">
+                      <b>{node.messageCount}</b>
+                      <span>
+                        {node.threadCount || 1} {node.threadCount === 1 ? "thread" : "threads"}
+                      </span>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           </section>

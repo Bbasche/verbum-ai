@@ -1,10 +1,13 @@
 export type SourceKind =
+  | "orchestrator"
   | "claude-code"
   | "codex"
   | "terminal"
   | "memory"
   | "human"
   | "custom";
+
+export type MasterAgentBackend = "claude-code" | "codex";
 
 export type MessageBlock =
   | { type: "markdown"; text: string }
@@ -60,6 +63,7 @@ export interface TerminalSession {
 export interface BridgeSnapshot {
   version: string;
   workspaceRoot: string;
+  masterAgent: MasterAgentState;
   conversations: ConversationSummary[];
   sources: SourceDescriptor[];
   messages: AppMessage[];
@@ -70,6 +74,14 @@ export interface BridgeSnapshot {
     command: string;
     sessionId: string;
   }>;
+}
+
+export interface MasterAgentState {
+  backend: MasterAgentBackend;
+  backendLabel: string;
+  modelLabel: string;
+  status: string;
+  responsibilities: string[];
 }
 
 export interface SetupStatus {
@@ -122,4 +134,8 @@ export interface RunTerminalRequest {
 
 export interface SpawnConversationRequest {
   title?: string;
+}
+
+export interface SetMasterAgentBackendRequest {
+  backend: MasterAgentBackend;
 }

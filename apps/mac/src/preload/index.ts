@@ -6,17 +6,20 @@ import type {
   FileAttachment,
   RunTerminalRequest,
   SendMessageRequest,
+  SetMasterAgentBackendRequest,
   SetupStatus,
   SpawnConversationRequest
 } from "../shared/bridge-types.js";
 
 contextBridge.exposeInMainWorld("verbumApp", {
   platform: process.platform,
-  version: "0.1.0",
+  version: "0.1.2",
   getSnapshot: () => ipcRenderer.invoke("verbum:get-snapshot") as Promise<BridgeSnapshot>,
   sendMessage: (request: SendMessageRequest) => ipcRenderer.invoke("verbum:send-message", request),
   sendContextPrompt: (request: ContextPromptRequest) =>
     ipcRenderer.invoke("verbum:send-context-prompt", request),
+  setMasterAgentBackend: (request: SetMasterAgentBackendRequest) =>
+    ipcRenderer.invoke("verbum:set-master-agent-backend", request),
   pickFiles: () => ipcRenderer.invoke("verbum:pick-files") as Promise<FileAttachment[]>,
   runTerminalCommand: (request: RunTerminalRequest) =>
     ipcRenderer.invoke("verbum:run-terminal", request),

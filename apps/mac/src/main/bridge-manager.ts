@@ -11,9 +11,12 @@ import type {
   ConversationSummary,
   ContextPromptRequest,
   FileAttachment,
+  MasterAgentBackend,
+  MasterAgentState,
   MessageBlock,
   RunTerminalRequest,
   SendMessageRequest,
+  SetMasterAgentBackendRequest,
   SetupStatus,
   SpawnConversationRequest,
   SourceDescriptor,
@@ -48,10 +51,23 @@ interface VerbumAppConfig {
   customSources?: CustomSourceConfig[];
 }
 
+interface RoutedModelOptions {
+  sourceId: string;
+  sourceLabel: string;
+  sourceKind: SourceDescriptor["kind"];
+  model?: string;
+  promptLabel: string;
+  answerLabel: string;
+  usageLabel: string;
+  startEvent: string;
+  doneEvent: string;
+  systemPrompt?: string;
+}
+
 export class BridgeManager extends EventEmitter<{
   snapshot: [snapshot: BridgeSnapshot];
 }> {
-  private readonly version = "0.1.0";
+  private readonly version = "0.1.2";
   private readonly workspaceRoot: string;
   private readonly verbumConfigDir = join(homedir(), ".config", "verbum");
   private readonly serviceLabel = "ai.verbum.helper";
@@ -72,6 +88,7 @@ export class BridgeManager extends EventEmitter<{
   private readonly codexThreadNames = new Map<string, string>();
   private readonly codexProcessedLineCounts = new Map<string, number>();
   private readonly attachedCodexSessions = new Set<string>();
+  private masterAgentBackend: MasterAgentBackend = "claude-code";
   private customSourceProcessesStarted = false;
   private codexPollingTimer?: NodeJS.Timeout;
 
@@ -99,6 +116,7 @@ export class BridgeManager extends EventEmitter<{
     return {
       version: this.version,
       workspaceRoot: this.workspaceRoot,
+      masterAgent: this.buildMasterAgentState(),
       conversations: [...this.conversations.values()],
       sources: [...this.sources.values()],
       messages: [...this.messages],
@@ -122,6 +140,21 @@ export class BridgeManager extends EventEmitter<{
         }
       ]
     };
+  }
+
+  setMasterAgentBackend(request: SetMasterAgentBackendRequest): MasterAgentState {
+    this.masterAgentBackend = request.backend;
+    const backendLabel = request.backend === "claude-code" ? "Claude Code" : "Codex";
+    this.updateSource("master-agent", {
+      status: `ready · ${backendLabel}`,
+      typing:
+        request.backend === "claude-code"
+          ? "cross-thread synthesis, weekly reports, delegation via Claude Sonnet"
+          : "cross-thread synthesis, weekly reports, delegation via Codex"
+    });
+    this.pushBusEvent(`Master Agent switched to ${backendLabel}`);
+    this.emitSnapshot();
+    return this.buildMasterAgentState();
   }
 
   readAttachments(filePaths: string[]): FileAttachment[] {
@@ -244,6 +277,11 @@ export class BridgeManager extends EventEmitter<{
     content: string,
     conversation: ConversationSummary
   ): Promise<void> {
+    if (routeTo === "master-agent") {
+      await this.sendToMasterAgent(content, conversation);
+      return;
+    }
+
     if (routeTo === "claude-code") {
       await this.sendToClaude(content, conversation);
       return;
@@ -514,6 +552,16 @@ export class BridgeManager extends EventEmitter<{
   private seedSources(customSources: CustomSourceConfig[]): void {
     const baseSources: SourceDescriptor[] = [
       {
+        id: "master-agent",
+        name: "Master Agent",
+        kind: "orchestrator",
+        subtitle: "Cross-thread synthesis + delegation",
+        mode: "replacement",
+        connected: true,
+        typing: "cross-thread reports, next steps, machine-level answers",
+        status: "ready · Claude Code"
+      },
+      {
         id: "verbum-app",
         name: "Verbum App",
         kind: "custom",
@@ -622,16 +670,16 @@ export class BridgeManager extends EventEmitter<{
       kind: "master",
       status: "master",
       lastActivity: timestamp(),
-      sourceId: "verbum-app",
-      sourceLabel: "Verbum App"
+      sourceId: "master-agent",
+      sourceLabel: "Master Agent"
     });
     this.pushMessage({
       id: randomUUID(),
       conversationId: "master",
       conversationTitle: "Master conversation",
-      sourceId: "verbum-app",
-      sourceLabel: "Verbum App",
-      sourceKind: "custom",
+      sourceId: "master-agent",
+      sourceLabel: "Master Agent",
+      sourceKind: "orchestrator",
       role: "system",
       title: "Start here",
       timestamp: timestamp(),
@@ -641,8 +689,13 @@ export class BridgeManager extends EventEmitter<{
           items: [
             { label: "Workspace", value: this.workspaceRoot },
             { label: "Claude bridge", value: "task watcher + prompt runner" },
-            { label: "Codex bridge", value: "JSON exec stream" }
+            { label: "Codex bridge", value: "desktop + JSON exec stream" },
+            { label: "Master agent", value: "cross-thread synthesis + delegation" }
           ]
+        },
+        {
+          type: "markdown",
+          text: "Ask for summaries, loose ends, next steps, or routing help. The master agent looks across your machine context before it answers."
         }
       ]
     });
@@ -653,6 +706,8 @@ export class BridgeManager extends EventEmitter<{
     const claude = findExecutable(["claude", "/opt/homebrew/bin/claude"]);
     const codex = findExecutable(["codex", "/Applications/Codex.app/Contents/Resources/codex"]);
     const codexDesktopSessions = existsSync(this.codexSessionIndexPath) || existsSync(this.codexSessionsDir);
+    const masterBackendReady =
+      this.masterAgentBackend === "claude-code" ? Boolean(claude) : Boolean(codex) || codexDesktopSessions;
 
     this.updateSource("claude-code", {
       connected: Boolean(claude),
@@ -669,6 +724,13 @@ export class BridgeManager extends EventEmitter<{
           ? "connected"
           : "not installed",
       command: codex ?? undefined
+    });
+    this.updateSource("master-agent", {
+      connected: masterBackendReady,
+      status: masterBackendReady
+        ? `ready · ${this.masterAgentBackend === "claude-code" ? "Claude Code" : "Codex"}`
+        : `waiting for ${this.masterAgentBackend === "claude-code" ? "Claude Code" : "Codex"}`,
+      command: this.masterAgentBackend === "claude-code" ? (claude ?? undefined) : (codex ?? undefined)
     });
 
     if (claude) {
@@ -690,7 +752,7 @@ export class BridgeManager extends EventEmitter<{
     }
 
     let importedCount = 0;
-    for (const file of listRecentJsonFiles(this.claudeTasksDir, 24)) {
+    for (const file of listRecentClaudeTaskFiles(this.claudeTasksDir, 10, 10)) {
       importedCount += this.ingestClaudeTaskFile(file);
     }
 
@@ -1079,20 +1141,79 @@ export class BridgeManager extends EventEmitter<{
     this.emitSnapshot();
   }
 
-  private async sendToCodex(prompt: string, conversation: ConversationSummary): Promise<void> {
+  private async sendToMasterAgent(prompt: string, conversation: ConversationSummary): Promise<void> {
+    const contextPack = this.buildContextPack({
+      lookbackDays: 7,
+      sourceIds: ["claude-code", "codex", "shell-1", "shell-2", "inbox", "verbum-app", "master-agent"]
+    });
+    const systemPrompt = buildMasterAgentSystemPrompt(this.workspaceRoot, conversation.title, this.masterAgentBackend);
+    const composedPrompt = [
+      "Answer as Verbum's master agent.",
+      "Use the machine context below before you respond.",
+      "",
+      prompt,
+      "",
+      contextPack.content
+    ].join("\n");
+
+    if (this.masterAgentBackend === "codex") {
+      await this.sendToCodex(composedPrompt, conversation, {
+        sourceId: "master-agent",
+        sourceLabel: "Master Agent",
+        sourceKind: "orchestrator",
+        promptLabel: "Master agent prompt",
+        answerLabel: "Master agent answer",
+        usageLabel: "Master agent usage",
+        startEvent: "Master Agent started a Codex-backed run",
+        doneEvent: "Master Agent completed a Codex-backed run",
+        systemPrompt,
+        model: undefined
+      });
+      return;
+    }
+
+    await this.sendToClaude(composedPrompt, conversation, {
+      sourceId: "master-agent",
+      sourceLabel: "Master Agent",
+      sourceKind: "orchestrator",
+      promptLabel: "Master agent prompt",
+      answerLabel: "Master agent answer",
+      usageLabel: "Master agent usage",
+      startEvent: "Master Agent started a Claude-backed run",
+      doneEvent: "Master Agent completed a Claude-backed run",
+      systemPrompt,
+      model: "sonnet"
+    });
+  }
+
+  private async sendToCodex(
+    prompt: string,
+    conversation: ConversationSummary,
+    options: RoutedModelOptions = {
+      sourceId: "codex",
+      sourceLabel: "Codex",
+      sourceKind: "codex",
+      promptLabel: "Codex run started",
+      answerLabel: "Codex answer",
+      usageLabel: "Codex usage",
+      startEvent: "Codex started a non-interactive run",
+      doneEvent: "Codex run completed"
+    }
+  ): Promise<void> {
     const command = this.sources.get("codex")?.command ?? "codex";
-    this.pushBusEvent("Codex started a non-interactive run");
+    const effectivePrompt = options.systemPrompt ? `${options.systemPrompt}\n\n${prompt}` : prompt;
+    this.pushBusEvent(options.startEvent);
     this.pushMessage({
       id: randomUUID(),
       conversationId: conversation.id,
       conversationTitle: conversation.title,
-      sourceId: "codex",
-      sourceLabel: "Codex",
-      sourceKind: "codex",
+      sourceId: options.sourceId,
+      sourceLabel: options.sourceLabel,
+      sourceKind: options.sourceKind,
       role: "system",
-      title: "Codex run started",
+      title: options.promptLabel,
       timestamp: timestamp(),
-      blocks: [{ type: "markdown", text: prompt }]
+      blocks: [{ type: "markdown", text: effectivePrompt }]
     });
     this.emitSnapshot();
 
@@ -1106,9 +1227,10 @@ export class BridgeManager extends EventEmitter<{
           "workspace-write",
           "exec",
           "--json",
+          ...(options.model ? ["--model", options.model] : []),
           "--cd",
           this.workspaceRoot,
-          prompt
+          effectivePrompt
         ],
         {
           cwd: this.workspaceRoot,
@@ -1124,21 +1246,21 @@ export class BridgeManager extends EventEmitter<{
         buffer = lines.pop() ?? "";
 
         for (const line of lines.map((value) => value.trim()).filter(Boolean)) {
-          this.ingestCodexLine(line, conversation);
+          this.ingestCodexLine(line, conversation, options);
         }
       };
 
       child.stdout.on("data", flush);
       child.stderr.on("data", flush);
       child.on("exit", () => {
-        this.pushBusEvent("Codex run completed");
+        this.pushBusEvent(options.doneEvent);
         this.emitSnapshot();
         resolvePromise();
       });
     });
   }
 
-  private ingestCodexLine(line: string, conversation: ConversationSummary): void {
+  private ingestCodexLine(line: string, conversation: ConversationSummary, options: RoutedModelOptions): void {
     try {
       const event = JSON.parse(line) as {
         type?: string;
@@ -1155,11 +1277,11 @@ export class BridgeManager extends EventEmitter<{
           id: randomUUID(),
           conversationId: conversation.id,
           conversationTitle: conversation.title,
-          sourceId: "codex",
-          sourceLabel: "Codex",
-          sourceKind: "codex",
+          sourceId: options.sourceId,
+          sourceLabel: options.sourceLabel,
+          sourceKind: options.sourceKind,
           role: "system",
-          title: "Codex thread started",
+          title: `${options.sourceLabel} thread started`,
           timestamp: timestamp(),
           blocks: [
             {
@@ -1176,11 +1298,11 @@ export class BridgeManager extends EventEmitter<{
           id: randomUUID(),
           conversationId: conversation.id,
           conversationTitle: conversation.title,
-          sourceId: "codex",
-          sourceLabel: "Codex",
-          sourceKind: "codex",
+          sourceId: options.sourceId,
+          sourceLabel: options.sourceLabel,
+          sourceKind: options.sourceKind,
           role: "assistant",
-          title: "Codex answer",
+          title: options.answerLabel,
           timestamp: timestamp(),
           blocks: textToBlocks(event.item.text ?? "")
         });
@@ -1192,11 +1314,11 @@ export class BridgeManager extends EventEmitter<{
           id: randomUUID(),
           conversationId: conversation.id,
           conversationTitle: conversation.title,
-          sourceId: "codex",
-          sourceLabel: "Codex",
-          sourceKind: "codex",
+          sourceId: options.sourceId,
+          sourceLabel: options.sourceLabel,
+          sourceKind: options.sourceKind,
           role: "system",
-          title: "Codex usage",
+          title: options.usageLabel,
           timestamp: timestamp(),
           blocks: [
             {
@@ -1214,11 +1336,11 @@ export class BridgeManager extends EventEmitter<{
         id: randomUUID(),
         conversationId: conversation.id,
         conversationTitle: conversation.title,
-        sourceId: "codex",
-        sourceLabel: "Codex",
-        sourceKind: "codex",
+        sourceId: options.sourceId,
+        sourceLabel: options.sourceLabel,
+        sourceKind: options.sourceKind,
         role: "system",
-        title: "Codex event",
+        title: `${options.sourceLabel} event`,
         timestamp: timestamp(),
         blocks: [{ type: "markdown", text: line }]
       });
@@ -1360,18 +1482,31 @@ export class BridgeManager extends EventEmitter<{
     this.emitSnapshot();
   }
 
-  private async sendToClaude(prompt: string, conversation: ConversationSummary): Promise<void> {
+  private async sendToClaude(
+    prompt: string,
+    conversation: ConversationSummary,
+    options: RoutedModelOptions = {
+      sourceId: "claude-code",
+      sourceLabel: "Claude Code",
+      sourceKind: "claude-code",
+      promptLabel: "Claude prompt started",
+      answerLabel: "Claude answer",
+      usageLabel: "Claude usage",
+      startEvent: "Claude Code started a printed run",
+      doneEvent: "Claude Code run completed"
+    }
+  ): Promise<void> {
     const command = this.sources.get("claude-code")?.command ?? "claude";
-    this.pushBusEvent("Claude Code started a printed run");
+    this.pushBusEvent(options.startEvent);
     this.pushMessage({
       id: randomUUID(),
       conversationId: conversation.id,
       conversationTitle: conversation.title,
-      sourceId: "claude-code",
-      sourceLabel: "Claude Code",
-      sourceKind: "claude-code",
+      sourceId: options.sourceId,
+      sourceLabel: options.sourceLabel,
+      sourceKind: options.sourceKind,
       role: "system",
-      title: "Claude prompt started",
+      title: options.promptLabel,
       timestamp: timestamp(),
       blocks: [{ type: "markdown", text: prompt }]
     });
@@ -1385,6 +1520,8 @@ export class BridgeManager extends EventEmitter<{
         "json",
         "--permission-mode",
         "default",
+        ...(options.model ? ["--model", options.model] : []),
+        ...(options.systemPrompt ? ["--append-system-prompt", options.systemPrompt] : []),
         prompt
       ],
       this.workspaceRoot
@@ -1403,11 +1540,11 @@ export class BridgeManager extends EventEmitter<{
         id: randomUUID(),
         conversationId: conversation.id,
         conversationTitle: conversation.title,
-        sourceId: "claude-code",
-        sourceLabel: "Claude Code",
-        sourceKind: "claude-code",
+        sourceId: options.sourceId,
+        sourceLabel: options.sourceLabel,
+        sourceKind: options.sourceKind,
         role: "assistant",
-        title: "Claude answer",
+        title: options.answerLabel,
         timestamp: timestamp(),
         blocks: textToBlocks(event.result ?? output)
       });
@@ -1416,11 +1553,11 @@ export class BridgeManager extends EventEmitter<{
         id: randomUUID(),
         conversationId: conversation.id,
         conversationTitle: conversation.title,
-        sourceId: "claude-code",
-        sourceLabel: "Claude Code",
-        sourceKind: "claude-code",
+        sourceId: options.sourceId,
+        sourceLabel: options.sourceLabel,
+        sourceKind: options.sourceKind,
         role: "system",
-        title: "Claude usage",
+        title: options.usageLabel,
         timestamp: timestamp(),
         blocks: [
           {
@@ -1437,17 +1574,17 @@ export class BridgeManager extends EventEmitter<{
         id: randomUUID(),
         conversationId: conversation.id,
         conversationTitle: conversation.title,
-        sourceId: "claude-code",
-        sourceLabel: "Claude Code",
-        sourceKind: "claude-code",
+        sourceId: options.sourceId,
+        sourceLabel: options.sourceLabel,
+        sourceKind: options.sourceKind,
         role: "assistant",
-        title: "Claude answer",
+        title: options.answerLabel,
         timestamp: timestamp(),
         blocks: textToBlocks(output)
       });
     }
 
-    this.pushBusEvent("Claude Code run completed");
+    this.pushBusEvent(options.doneEvent);
     this.emitSnapshot();
   }
 
@@ -1524,6 +1661,21 @@ export class BridgeManager extends EventEmitter<{
   private emitSnapshot(): void {
     this.emit("snapshot", this.getSnapshot());
   }
+
+  private buildMasterAgentState(): MasterAgentState {
+    const backendLabel = this.masterAgentBackend === "claude-code" ? "Claude Code" : "Codex";
+    return {
+      backend: this.masterAgentBackend,
+      backendLabel,
+      modelLabel: this.masterAgentBackend === "claude-code" ? "Claude Sonnet" : "Codex default model",
+      status: this.sources.get("master-agent")?.status ?? `ready · ${backendLabel}`,
+      responsibilities: [
+        "Keep the human-facing thread coherent across Claude, Codex, terminals, and imported sessions.",
+        "Answer with concrete accomplishments, loose ends, next steps, and unresolved questions.",
+        "Delegate to Claude Code, Codex, or terminals only when direct execution will help."
+      ]
+    };
+  }
 }
 
 function inferWorkspaceRoot(currentWorkingDirectory: string): string {
@@ -1534,16 +1686,24 @@ function inferWorkspaceRoot(currentWorkingDirectory: string): string {
   return currentWorkingDirectory;
 }
 
+function listRecentClaudeTaskFiles(directory: string, threadLimit: number, tasksPerThread: number): string[] {
+  const threadDirectories = readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(directory, entry.name))
+    .sort((left, right) => safeMtime(right) - safeMtime(left))
+    .slice(0, threadLimit);
+
+  return threadDirectories.flatMap((threadDirectory) =>
+    listRecentFilesByExtension(threadDirectory, ".json", tasksPerThread)
+  );
+}
+
 function safeMtime(filePath: string): number {
   try {
     return statSync(filePath).mtimeMs;
   } catch {
     return 0;
   }
-}
-
-function listRecentJsonFiles(directory: string, limit: number): string[] {
-  return listRecentFilesByExtension(directory, ".json", limit);
 }
 
 function listRecentFilesByExtension(directory: string, extension: string, limit: number): string[] {
@@ -1776,6 +1936,24 @@ function injectAttachmentsIntoPrompt(prompt: string, attachments?: FileAttachmen
   });
 
   return [prompt, "", "Attached files:", ...attachmentSections].join("\n\n");
+}
+
+function buildMasterAgentSystemPrompt(
+  workspaceRoot: string,
+  conversationTitle: string,
+  backend: MasterAgentBackend
+): string {
+  return [
+    "You are Verbum's master agent.",
+    `Your current workspace root is ${workspaceRoot}.`,
+    `You are responding inside the conversation titled "${conversationTitle}".`,
+    "Your job is to keep the machine-level conversation coherent across Claude Code, Codex, terminals, and imported threads.",
+    "Prioritize synthesis over theatrics.",
+    "When you answer, explicitly cover accomplishments, loose ends, next steps, and unresolved questions when relevant.",
+    "Only suggest delegation when it is genuinely useful, and make the handoff concrete.",
+    "Do not narrate hidden planning, internal implementation details, or UI concepts as if they were user-facing copy.",
+    `Current backend: ${backend === "claude-code" ? "Claude Code using Claude Sonnet" : "Codex using its configured default model"}.`
+  ].join("\n");
 }
 
 function findExecutable(candidates: string[]): string | null {

@@ -3,8 +3,10 @@ import type {
   ConversationSummary,
   ContextPromptRequest,
   FileAttachment,
+  MasterAgentState,
   RunTerminalRequest,
   SendMessageRequest,
+  SetMasterAgentBackendRequest,
   SetupStatus,
   SpawnConversationRequest
 } from "./message-schema";
@@ -17,6 +19,7 @@ declare global {
       getSnapshot(): Promise<BridgeSnapshot>;
       sendMessage(request: SendMessageRequest): Promise<void>;
       sendContextPrompt(request: ContextPromptRequest): Promise<void>;
+      setMasterAgentBackend(request: SetMasterAgentBackendRequest): Promise<MasterAgentState>;
       pickFiles(): Promise<FileAttachment[]>;
       runTerminalCommand(request: RunTerminalRequest): Promise<void>;
       runLaunchDemo(): Promise<void>;

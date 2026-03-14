@@ -286,7 +286,7 @@ button {
 }
 
 .chat-layout {
-  grid-template-columns: 250px minmax(0, 1fr) 300px;
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
 }
 
 .feed-layout-tab {
@@ -422,6 +422,10 @@ button {
 .tab-inspector,
 .graph-inspector {
   background: var(--bg-deep);
+}
+
+.thread-rail {
+  border-right: 1px solid rgba(248, 243, 235, 0.04);
 }
 
 .conversation-list,
@@ -563,6 +567,12 @@ button {
   gap: 14px;
 }
 
+.conversation-workspace {
+  background:
+    radial-gradient(circle at top center, rgba(200, 75, 47, 0.06), transparent 28%),
+    var(--panel);
+}
+
 .thread-header-card {
   display: grid;
   gap: 14px;
@@ -573,6 +583,60 @@ button {
     radial-gradient(circle at top right, rgba(200, 75, 47, 0.08), transparent 34%),
     rgba(255, 255, 255, 0.015);
   animation: surface-in 260ms ease both;
+}
+
+.master-agent-bar {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(200, 75, 47, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(200, 75, 47, 0.12), transparent 34%),
+    rgba(15, 10, 8, 0.72);
+}
+
+.master-agent-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.master-agent-copy p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.master-agent-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.master-agent-select {
+  display: inline-grid;
+  gap: 6px;
+}
+
+.master-agent-select span {
+  color: var(--muted);
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.master-agent-select select {
+  min-width: 180px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(9, 6, 5, 0.64);
+  color: var(--text);
+}
+
+.master-agent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .thread-header-copy {
@@ -779,6 +843,10 @@ button {
   padding-right: 2px;
 }
 
+.message-feed {
+  padding-bottom: 28px;
+}
+
 .attachment-strip,
 .shortcut-row {
   display: flex;
@@ -834,6 +902,8 @@ button {
 }
 
 .message-card {
+  width: min(100%, 920px);
+  margin-inline: auto;
   padding: 14px;
   border-radius: 18px;
   border: 1px solid var(--border);
@@ -1253,7 +1323,7 @@ button {
 
 .graph-stage-inner {
   position: absolute;
-  inset: 6% 11%;
+  inset: 6% 16%;
 }
 
 .graph-grid,
@@ -1411,6 +1481,19 @@ button {
 .graph-node-compact {
   min-width: 82px;
   max-width: 98px;
+}
+
+.graph-node-thread {
+  min-width: 88px;
+  max-width: 108px;
+  border-color: rgba(248, 243, 235, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
+    rgba(18, 13, 11, 0.92);
+}
+
+.graph-node-orchestrator {
+  box-shadow: inset 0 0 0 1px rgba(240, 138, 69, 0.18);
 }
 
 .graph-node-model {
@@ -1586,7 +1669,7 @@ button {
 
 @media (max-width: 1400px) {
   .chat-layout {
-    grid-template-columns: 224px minmax(0, 1fr) 284px;
+    grid-template-columns: 248px minmax(0, 1fr) 260px;
   }
 
   .graph-layout {
@@ -1599,6 +1682,10 @@ button {
 
   .graph-node {
     max-width: 108px;
+  }
+
+  .graph-stage-inner {
+    inset: 6% 12%;
   }
 
   .thread-summary-row {
@@ -1629,7 +1716,7 @@ button {
   }
 
   .graph-stage-inner {
-    inset: 5% 7%;
+    inset: 5% 8%;
   }
 }
 
@@ -1661,5 +1748,9 @@ button {
 
   .graph-stage-inner {
     inset: 4% 4%;
+  }
+
+  .master-agent-select select {
+    min-width: 100%;
   }
 }

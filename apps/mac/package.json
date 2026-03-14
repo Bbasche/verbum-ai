@@ -1,7 +1,7 @@
 {
   "name": "@verbum/mac",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Verbum App for macOS",
   "author": "Ben Basche",
   "main": "out/main/index.js",
