@@ -46,6 +46,10 @@ export default function DocsPage() {
             <pre className="vcode">{`# Mac app
 open https://verbum-ai.vercel.app/download/mac
 
+# if macOS blocks Verbum after you move it to Applications
+xattr -dr com.apple.quarantine /Applications/Verbum.app
+open /Applications/Verbum.app
+
 # Framework package
 npm install verbum-ai`}</pre>
           </article>
@@ -89,6 +93,10 @@ npm run dev --workspace @verbum/mac
             <p className="doc-copy">
               Use the package to build with Verbum and the Mac app to run it as a desktop companion for
               Claude Code, Codex, terminals, and custom sources.
+            </p>
+            <p className="doc-copy">
+              The current DMG is usable for testers, but the frictionless install path is still waiting
+              on Apple signing keys for full signing and notarization.
             </p>
           </article>
         </div>

@@ -26,6 +26,15 @@ npm install
 npm run dev --workspace @verbum/mac
 ```
 
+## Open the downloaded app if macOS blocks it
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Verbum.app
+open /Applications/Verbum.app
+```
+
+The current DMG is usable for testers, but the clean public install flow is still waiting on Apple signing keys for full signing and notarization.
+
 ## Clean local setup
 
 1. Make sure `claude` is installed and authenticated.

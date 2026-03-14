@@ -71,6 +71,15 @@ The app can:
 - run terminal commands in tracked sessions
 - render custom typed message streams from JSONL sources
 
+## Open The Mac App If macOS Blocks It
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Verbum.app
+open /Applications/Verbum.app
+```
+
+The current DMG is usable for testers, but the app is not fully signed and notarized yet. We are still waiting on Apple signing keys for the frictionless public install path.
+
 ## Local Development
 
 ```bash
