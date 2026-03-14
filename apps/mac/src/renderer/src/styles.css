@@ -290,7 +290,7 @@ button {
 }
 
 .feed-layout-tab {
-  grid-template-columns: minmax(0, 1fr) 310px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .graph-layout {
@@ -1212,50 +1212,58 @@ button {
   line-height: 1.45;
 }
 
-.feed-side {
-  display: grid;
-  gap: 1px;
-  background: var(--border);
-}
-
-.ticker-window {
+.live-feed-window {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 20px;
   border: 1px solid var(--border);
-  background: rgba(8, 6, 6, 0.48);
-  max-height: 320px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    rgba(8, 6, 6, 0.52);
+  mask-image: linear-gradient(180deg, transparent, black 7%, black 93%, transparent);
 }
 
-.ticker-track {
+.live-feed-track {
   display: grid;
-  gap: 1px;
+  gap: 10px;
+  padding: 16px;
   transform: translateY(-48%);
-  animation: ticker-scroll 28s linear infinite;
+  animation: live-feed-scroll 34s linear infinite;
 }
 
-.ticker-item {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(248, 243, 235, 0.05);
+.live-feed-window:hover .live-feed-track {
+  animation-play-state: paused;
 }
 
-.ticker-item span {
-  color: var(--accent-hot);
-  font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.live-feed-card .message-card,
+.live-feed-event-card {
+  width: min(100%, 980px);
+  margin-inline: auto;
 }
 
-.ticker-item strong {
+.live-feed-event-card {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(248, 243, 235, 0.09);
+  background:
+    radial-gradient(circle at top right, rgba(200, 75, 47, 0.08), transparent 35%),
+    rgba(16, 11, 10, 0.9);
+  animation: message-in 220ms ease both;
+}
+
+.live-feed-event-card strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 8px;
   color: var(--text-strong);
-  font-size: 0.8rem;
+  font-size: 0.92rem;
 }
 
-.ticker-item p {
-  margin-top: 4px;
-  color: var(--muted-2);
-  font-size: 0.72rem;
+.live-feed-event-card p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
 }
 
 .activity-card-row {
@@ -1280,6 +1288,10 @@ button {
   color: var(--muted);
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.source-stack-inline {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .graph-workspace {
@@ -1695,7 +1707,7 @@ button {
   background: rgba(248, 243, 235, 0.12);
 }
 
-@keyframes ticker-scroll {
+@keyframes live-feed-scroll {
   from {
     transform: translateY(-48%);
   }
@@ -1766,6 +1778,10 @@ button {
   .graph-layout,
   .feed-activity-grid,
   .graph-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .source-stack-inline {
     grid-template-columns: 1fr;
   }
 

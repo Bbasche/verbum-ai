@@ -602,18 +602,17 @@ export function App() {
     .sort((left, right) => right.score - left.score)
     .slice(0, 4);
 
-  const tickerItems = [
-    ...busEvents.slice(-8).map((event) => ({
-      key: `event-${event}`,
-      label: "bus",
-      title: event,
+  const liveFeedItems = [
+    ...busEvents.slice(0, 10).map((event, index) => ({
+      key: `bus-${index}-${event}`,
+      type: "event" as const,
+      event,
       meta: "global activity"
     })),
-    ...globalMessages.slice(0, 10).map((message) => ({
+    ...globalMessages.slice(0, 24).map((message) => ({
       key: message.id,
-      label: message.sourceLabel,
-      title: message.title,
-      meta: `${message.conversationTitle} · ${message.timestamp}`
+      type: "message" as const,
+      message
     }))
   ];
 
@@ -1335,8 +1334,8 @@ export function App() {
             <div className="panel-head panel-head-inline">
               <div>
                 <span className="eyebrow">Global Feed</span>
-                <h2>Recent activity across connected sources.</h2>
-                <p>Bus events, model replies, tool output, and terminal activity appear here in time order.</p>
+                <h2>One moving stream across the whole machine.</h2>
+                <p>Bus events, model replies, tool output, and terminal activity all live in the same realtime lane.</p>
               </div>
               <span className="status-pill">{globalMessages.length} total messages</span>
             </div>
@@ -1353,7 +1352,7 @@ export function App() {
               <article className="graph-summary-card">
                 <span>Bus events</span>
                 <strong>{busEvents.length}</strong>
-                <p>High-level activity crossing the whole system.</p>
+                <p>Now merged directly into the same live feed.</p>
               </article>
               <article className="graph-summary-card">
                 <span>Connected sources</span>
@@ -1362,50 +1361,35 @@ export function App() {
               </article>
             </div>
 
-            <div className="global-feed-list">
-              {globalMessages.map((message) => (
-                <MessageRenderer key={message.id} message={message} />
+            <div className="live-feed-window">
+              <div className="live-feed-track">
+                {[...liveFeedItems, ...liveFeedItems].map((item, index) =>
+                  item.type === "message" ? (
+                    <div className="live-feed-card" key={`${item.key}-${index}`}>
+                      <MessageRenderer message={item.message} />
+                    </div>
+                  ) : (
+                    <article className="live-feed-event-card" key={`${item.key}-${index}`}>
+                      <span className="eyebrow">Bus event</span>
+                      <strong>{item.event}</strong>
+                      <p>{item.meta}</p>
+                    </article>
+                  )
+                )}
+              </div>
+            </div>
+            <div className="source-stack source-stack-inline">
+              {sources.map((source) => (
+                <article className="activity-card" key={source.id}>
+                  <div className="activity-card-row">
+                    <strong>{source.name}</strong>
+                    <span>{messageCountBySource.get(source.id) ?? 0} msgs</span>
+                  </div>
+                  <p>{source.subtitle}</p>
+                </article>
               ))}
             </div>
           </section>
-
-          <aside className="feed-side">
-            <section className="panel ticker-panel">
-              <div className="panel-head">
-                <span className="eyebrow">Ticker</span>
-                <p>A downward-running activity stream for the whole machine.</p>
-              </div>
-              <div className="ticker-window">
-                <div className="ticker-track">
-                  {[...tickerItems, ...tickerItems].map((item, index) => (
-                    <article className="ticker-item" key={`${item.key}-${index}`}>
-                      <span>{item.label}</span>
-                      <strong>{item.title}</strong>
-                      <p>{item.meta}</p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panel-head">
-                <span className="eyebrow">Source Activity</span>
-                <p>Quick source health without leaving the feed.</p>
-              </div>
-              <div className="source-stack">
-                {sources.map((source) => (
-                  <article className="activity-card" key={source.id}>
-                    <div className="activity-card-row">
-                      <strong>{source.name}</strong>
-                      <span>{messageCountBySource.get(source.id) ?? 0} msgs</span>
-                    </div>
-                    <p>{source.subtitle}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </aside>
         </div>
       ) : null}
 
